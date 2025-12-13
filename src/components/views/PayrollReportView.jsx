@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { FileText, List, ChevronLeft, ChevronRight, AlertCircle, DollarSign, TrendingUp, Download, Printer, X, GripVertical, ListPlus } from 'lucide-react';
+import { FileText, List, ChevronLeft, ChevronRight, AlertCircle, DollarSign, TrendingUp, Download, Printer, X, GripVertical, ListPlus, Upload } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay, defaultDropAnimationSideEffects } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -186,7 +186,104 @@ const PayrollTrendsChart = ({ payrollSnapshots, currentDate }) => {
     );
 };
 
-const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDate }) => {
+const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDate, setShifts }) => {
+    const handleImport = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const text = event.target.result;
+                const lines = text.split('\n').filter(line => line.trim() !== '');
+                if (lines.length < 2) return;
+
+                // header: CC;1;2;3...
+                const header = lines[0].split(';');
+                if (header[0].trim().toUpperCase() !== 'CC') {
+                    alert('Formato inválido. La primera columna debe ser "CC".');
+                    return;
+                }
+
+                const headerDays = [];
+                for (let i = 1; i < header.length; i++) {
+                    const d = parseInt(header[i].trim());
+                    if (!isNaN(d)) headerDays.push({ index: i, dayNum: d });
+                }
+
+                const updates = {};
+                let count = 0;
+
+                for (let i = 1; i < lines.length; i++) {
+                    const row = lines[i].split(';');
+                    if (row.length < 2) continue;
+
+                    const cedula = row[0].trim();
+                    const workedIdStr = cedula;
+                    const worker = workers.find(w => (w.cedula && w.cedula === workedIdStr) || (String(w.id) === workedIdStr));
+
+                    if (!worker) continue;
+
+                    headerDays.forEach(({ index, dayNum }) => {
+                        if (index >= row.length) return;
+
+                        const code = row[index].trim();
+                        const targetDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dayNum);
+                        const dateStr = toLocalISOString(targetDate);
+                        const key = `${worker.id}_${dateStr}`;
+
+                        let newShift = null;
+
+                        if (code === 'M') newShift = { type: 'morning', start: '08:00', end: '16:00' };
+                        else if (code === 'T') newShift = { type: 'afternoon', start: '14:00', end: '22:00' };
+                        else if (code === 'N') newShift = { type: 'night', start: '22:00', end: '06:00' };
+                        else if (code === '-1' || code === '') {
+                            newShift = { type: 'off' };
+                        } else {
+                            const customDef = settings.customShifts?.find(cs => cs.code === code);
+                            if (customDef) {
+                                newShift = {
+                                    type: 'custom',
+                                    code: code,
+                                    start: customDef.start,
+                                    end: customDef.end,
+                                    customShiftId: customDef.id,
+                                    customShiftName: customDef.name,
+                                    customShiftIcon: customDef.icon,
+                                    customShiftColor: customDef.color
+                                };
+                            } else {
+                                newShift = { type: 'custom', code: code, start: '00:00', end: '00:00', customShiftName: `Código ${code}` };
+                            }
+                        }
+
+                        if (newShift) {
+                            updates[key] = newShift;
+                            count++;
+                        }
+                    });
+                }
+
+                if (count > 0) {
+                    if (typeof setShifts === 'function') {
+                        setShifts(prev => ({ ...prev, ...updates }));
+                        alert(`Se importaron ${count} turnos correctamente.`);
+                    } else {
+                        console.error("setShifts no disponible en PayrollReportView");
+                        alert("Error interno: No se puede actualizar la base de datos desde esta vista.");
+                    }
+                } else {
+                    alert('No se encontraron datos válidos para importar.');
+                }
+
+            } catch (err) {
+                console.error("Import error", err);
+                alert('Error al leer el archivo.');
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+    };
     const handleExport = () => {
         // Using semicolon separator for Excel Spanish locale
         let csv = 'Nombre;Sede;';
@@ -271,6 +368,15 @@ const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDat
                 <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500 group-hover:bg-purple-500 group-hover:text-white transition-colors"><Printer size={18} /></div>
                 <div><div className="text-sm font-bold text-[var(--text-primary)]">Imprimir</div><div className="text-[10px] text-[var(--text-secondary)]">Vista de impresión</div></div>
             </button>
+
+            {/* Import Button */}
+            <div className="pt-2 border-t border-[var(--glass-border)]">
+                <label className="flex items-center gap-3 p-3 rounded-xl bg-[var(--glass-dock)] hover:bg-[var(--glass-border)] transition-colors text-left group cursor-pointer">
+                    <input type="file" accept=".csv" className="hidden" onChange={handleImport} />
+                    <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 group-hover:bg-orange-500 group-hover:text-white transition-colors"><Upload size={18} /></div>
+                    <div><div className="text-sm font-bold text-[var(--text-primary)]">Restaurar / Importar</div><div className="text-[10px] text-[var(--text-secondary)]">Cargar archivo CSV</div></div>
+                </label>
+            </div>
         </div>
     );
 };
@@ -351,7 +457,7 @@ const PayrollRow = ({ worker, daysToShow, shifts, holidays, setSelectedCell, get
     );
 };
 
-const PayrollReportView = ({ workers, setWorkers, shifts, currentDate, holidays, setHolidays, navigate, setViewMode, daysToShow, setSelectedCell, setCurrentDate, settings, weeklyNotes, setWeeklyNotes, payrollSnapshots }) => {
+const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate, holidays, setHolidays, navigate, setViewMode, daysToShow, setSelectedCell, setCurrentDate, settings, weeklyNotes, setWeeklyNotes, payrollSnapshots }) => {
     const [showHistory, setShowHistory] = useState(false);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [scrollState, setScrollState] = useState({ atStart: true, atEnd: false });
@@ -420,7 +526,7 @@ const PayrollReportView = ({ workers, setWorkers, shifts, currentDate, holidays,
         <div className="flex flex-col h-full animate-enter bg-[var(--bg-body)]">
             {/* AGREGA LA INSTRUCCIÓN AQUÍ, justo antes de la tabla o en el encabezado */}
             <div className="px-6 pb-2">
-                <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)] bg-[var(--card-bg)] p-2 rounded-lg border border-[var(--glass-border)] w-fit">
+                <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)] bg-[var(--card-bg)] p-2 rounded-lg border border-[var(--glass-border)] w-fit no-print">
                     <span className="text-amber-500">💡 Tip:</span>
                     <span>Haz <strong>clic en el número del día</strong> (encabezado de la columna) para marcarlo como <strong>Festivo</strong>.</span>
                 </div>
@@ -428,7 +534,7 @@ const PayrollReportView = ({ workers, setWorkers, shifts, currentDate, holidays,
             <div className="px-6 py-8 flex flex-col gap-4 border-b border-[var(--glass-border)] bg-[var(--bg-body)] z-40 sticky top-0">
                 <div className="relative flex items-center justify-center">
                     <SectionHeader icon={FileText}>Nómina</SectionHeader>
-                    <div className="absolute right-0 flex gap-2">
+                    <div className="absolute right-0 flex gap-2 no-print">
                         <button onClick={() => setShowHistory(true)} className="p-2 rounded-full bg-[var(--glass-dock)] border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]" title="Historial"><List size={16} /></button>
                         <button onClick={() => navigate(-1)} className="p-2 rounded-full bg-[var(--glass-dock)] border border-[var(--glass-border)]"><ChevronLeft size={16} /></button>
                         <button onClick={() => navigate(1)} className="p-2 rounded-full bg-[var(--glass-dock)] border border-[var(--glass-border)]"><ChevronRight size={16} /></button>
@@ -479,14 +585,14 @@ const PayrollReportView = ({ workers, setWorkers, shifts, currentDate, holidays,
                 </div>
                 {/* BUSCA DONDE ESTABA EL TEXTO FIJO Y REEMPLÁZALO CON ESTO: */}
                 {settings.payrollConfig.customMessage && (
-                    <div className="mt-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-center">
+                    <div className="mt-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-center print-visible">
                         <p className="text-sm font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
                             {settings.payrollConfig.customMessage}
                         </p>
                     </div>
                 )}
                 {/* --- PAYROLL ANALYTICS PANEL --- */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 no-print">
                     <PayrollCostCalculator
                         workers={activeWorkers}
                         shifts={shifts}
@@ -508,6 +614,7 @@ const PayrollReportView = ({ workers, setWorkers, shifts, currentDate, holidays,
                         daysToShow={daysToShow}
                         settings={settings}
                         currentDate={currentDate}
+                        setShifts={setShifts} // Pass setShifts here
                     />
                 </div>
             </div>

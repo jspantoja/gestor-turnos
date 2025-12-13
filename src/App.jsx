@@ -255,7 +255,7 @@ const App = () => {
                                 )}
                                 {activeTab === 'report' && (
                                     <Suspense fallback={<SkeletonPage />}>
-                                        <PayrollReportView workers={workers} shifts={shifts} currentDate={currentDate} holidays={holidays} setHolidays={setHolidays} navigate={navigate} setViewMode={setViewMode} daysToShow={daysToShow} setSelectedCell={setSelectedCell} setCurrentDate={setCurrentDate} settings={settings} weeklyNotes={weeklyNotes} setWeeklyNotes={setWeeklyNotes} payrollSnapshots={payrollSnapshots} />
+                                        <PayrollReportView workers={workers} shifts={shifts} setShifts={setShifts} currentDate={currentDate} holidays={holidays} setHolidays={setHolidays} navigate={navigate} setViewMode={setViewMode} daysToShow={daysToShow} setSelectedCell={setSelectedCell} setCurrentDate={setCurrentDate} settings={settings} weeklyNotes={weeklyNotes} setWeeklyNotes={setWeeklyNotes} payrollSnapshots={payrollSnapshots} />
                                     </Suspense>
                                 )}
                                 {activeTab === 'workers' && <WorkersList workers={workers} setWorkers={setWorkers} setSelectedWorkerId={setSelectedWorkerId} sedes={settings.sedes} />}

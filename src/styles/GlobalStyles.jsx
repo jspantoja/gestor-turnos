@@ -766,6 +766,99 @@ const GlobalStyles = ({ accentColor, glassIntensity, reducedMotion, settings = {
     .animate-slideOutDown {
       animation: slideOutDown 0.2s ease-out forwards;
     }
+
+    /* ===================================
+       PRINT STYLES
+    =================================== */
+    @media print {
+      body {
+        overflow: visible !important;
+        background: white !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      
+      /* Hide Non-Printable Elements */
+      .no-print, 
+      .dock-container, 
+      .dock-menu,
+      .scroll-hint, 
+      .blob-cont,
+      button,
+      .print-hidden {
+        display: none !important;
+      }
+
+      /* Force Table Visibility */
+      .payroll-table-scroll,
+      .payroll-scroll-container,
+      .overflow-auto,
+      .flex-1 {
+        overflow: visible !important;
+        height: auto !important;
+        display: block !important;
+      }
+
+      /* Clean Content Layout */
+      .glass-panel,
+      .bg-\[var\(--bg-body\)\],
+      .bg-\[var\(--glass-dock\)\],
+      .bg-\[var\(--glass-border\)\] {
+        background: white !important;
+        border: none !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+      }
+
+      /* Table Specifics */
+      .report-table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+      }
+      
+      .report-table th, 
+      .report-table td {
+        border: 1px solid #ddd !important;
+        color: black !important;
+        page-break-inside: avoid;
+      }
+
+      .report-sticky-col {
+        position: static !important;
+        box-shadow: none !important;
+      }
+
+      /* Hide Gradients/Shadows */
+      .payroll-scroll-container::before, 
+      .payroll-scroll-container::after {
+        display: none !important;
+      }
+
+      /* Layout Resets */
+      .fixed, .sticky {
+        position: static !important;
+      }
+
+      /* Ensure Custom Message is visible */
+      .print-visible {
+        display: block !important;
+      }
+
+      /* Remove margins/padding that waste space */
+      .p-6, .py-8, .pb-32 {
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+      
+      /* Improve font size for print */
+      * {
+        font-size: 10pt !important;
+      }
+      
+      h3, h2 {
+        font-size: 14pt !important;
+      }
+    }
   `}</style>
 );
 
