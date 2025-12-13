@@ -63,12 +63,23 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
 
                     // 2. Estrategia A: Usar el turno que estamos reemplazando (si era laboral)
                     // Ej: Si cambiamos un turno de TARDE por un DESCANSO, el relevo cubre la TARDE.
-                    const workingTypes = ['morning', 'afternoon', 'night'];
+                    const workingTypes = ['morning', 'afternoon', 'night', 'custom'];
+
+                    let shiftProps = {};
 
                     if (workingTypes.includes(shift.type)) {
                         targetType = shift.type;
                         targetStart = shift.start;
                         targetEnd = shift.end;
+                        if (shift.type === 'custom') {
+                            shiftProps = {
+                                code: shift.code,
+                                customShiftId: shift.customShiftId,
+                                customShiftName: shift.customShiftName,
+                                customShiftIcon: shift.customShiftIcon,
+                                customShiftColor: shift.customShiftColor
+                            };
+                        }
                     }
                     // 3. Estrategia B: Si estaba vacío, mirar vecinos (ayer o mañana) para mantener consistencia
                     else {
@@ -100,7 +111,8 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                         start: targetStart,
                         end: targetEnd,
                         coveringId: worker.id,
-                        place: s.place || currentShiftPlace
+                        place: s.place || currentShiftPlace,
+                        ...shiftProps
                     };
                 }
             }
