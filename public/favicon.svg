@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="frostedLiquid" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#0066ff" />
+      <stop offset="50%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#ff6b00" />
+    </linearGradient>
+    
+    <linearGradient id="frostedBody" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#f0f8ff" stop-opacity="0.3" />
+    </linearGradient>
+
+    <linearGradient id="definedBorder" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1" />
+      <stop offset="50%" stop-color="#dbeafe" stop-opacity="0.8" /> <stop offset="100%" stop-color="#ffffff" stop-opacity="1" />
+    </linearGradient>
+
+    <clipPath id="frostedClip">
+      <rect x="30" y="30" width="452" height="452" rx="110" ry="110" />
+    </clipPath>
+  </defs>
+
+  <rect x="30" y="30" width="452" height="452" rx="110" ry="110" fill="url(#frostedBody)" stroke="url(#definedBorder)" stroke-width="12" />
+
+  <g clip-path="url(#frostedClip)">
+    <path d="M -50 320 C 120 250, 250 420, 562 300 V 600 H -50 Z" fill="url(#frostedLiquid)" />
+  </g>
+
+  <g transform="translate(256, 262) scale(0.85)" opacity="0.2">
+      <circle cx="0" cy="0" r="140" fill="none" stroke="#000000" stroke-width="25" stroke-linecap="round" />
+      <path d="M -50 -50 L 0 0 L 90 -90" fill="none" stroke="#000000" stroke-width="25" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <g transform="translate(256, 256) scale(0.85)">
+    <circle cx="0" cy="0" r="140" fill="none" stroke="#ffffff" stroke-width="25" stroke-linecap="round" />
+    <path d="M 0 -100 V -115" stroke="#ffffff" stroke-width="12" stroke-linecap="round" opacity="0.6"/>
+    <path d="M 0 100 V 115" stroke="#ffffff" stroke-width="12" stroke-linecap="round" opacity="0.6"/>
+    <path d="M 100 0 H 115" stroke="#ffffff" stroke-width="12" stroke-linecap="round" opacity="0.6"/>
+    <path d="M -100 0 H -115" stroke="#ffffff" stroke-width="12" stroke-linecap="round" opacity="0.6"/>
+    <path d="M -50 -50 L 0 0 L 90 -90" fill="none" stroke="#ffffff" stroke-width="25" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <path d="M 60 60 Q 256 20, 452 60 Q 452 200, 452 220 Q 256 120, 60 220 Q 60 200, 60 60 Z" fill="white" fill-opacity="0.2" />
+  <ellipse cx="110" cy="90" rx="15" ry="25" fill="#ffffff" fill-opacity="0.9" transform="rotate(-30, 110, 90)" />
+</svg>

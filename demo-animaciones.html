@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DEMO FINAL: Comparación con Animaciones Visibles</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 30px;
+            border-radius: 20px;
+            margin-bottom: 30px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+            max-width: 900px;
+            margin: 0 auto 30px;
+        }
+
+        h1 {
+            color: #1a1a2e;
+            font-size: 28px;
+            margin-bottom: 20px;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .option-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 16px;
+            padding: 25px;
+            text-align: center;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            transition: transform 0.2s;
+        }
+
+        .option-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .option-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+        }
+
+        .badge-1 {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+
+        .badge-2 {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+        }
+
+        .badge-3 {
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            color: white;
+        }
+
+        .option-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 15px;
+        }
+
+        .option-desc {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .test-btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: white;
+        }
+
+        .test-btn-1 {
+            background: linear-gradient(135deg, #10b981, #059669);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .test-btn-2 {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+        }
+
+        .test-btn-3 {
+            background: linear-gradient(135deg, #6366f1, #4f46e5);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .test-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        /* MODAL OVERLAY */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            animation: overlayFadeIn 0.4s ease-out;
+        }
+
+        .modal-overlay.closing {
+            animation: overlayFadeOut 0.4s ease-in;
+        }
+
+        @keyframes overlayFadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes overlayFadeOut {
+            from {
+                opacity: 1;
+            }
+
+            to {
+                opacity: 0;
+            }
+        }
+
+        /* MODAL PANEL - BASE */
+        .modal-panel {
+            position: relative;
+            border-radius: 24px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-overlay.active .modal-panel {
+            animation: modalSlideIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        .modal-overlay.closing .modal-panel {
+            animation: modalSlideOut 0.4s cubic-bezier(0.4, 0.0, 1, 1);
+        }
+
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(40px) scale(0.92);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes modalSlideOut {
+            from {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateY(40px) scale(0.92);
+            }
+        }
+
+        /* OPCIÓN 1: PSEUDOVIDRIO */
+        .modal-panel.style-1 {
+            background: linear-gradient(135deg,
+                    rgba(255, 255, 255, 0.92) 0%,
+                    rgba(255, 255, 255, 0.78) 100%);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            box-shadow:
+                0 25px 50px rgba(0, 0, 0, 0.25),
+                inset 0 1px 0 rgba(255, 255, 255, 0.8);
+        }
+
+        .modal-panel.style-1::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50%;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent);
+            border-radius: 24px 24px 0 0;
+            pointer-events: none;
+        }
+
+        /* OPCIÓN 2: VIDRIO REAL */
+        .modal-panel.style-2 {
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(40px) saturate(180%);
+            -webkit-backdrop-filter: blur(40px) saturate(180%);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+
+        /* OPCIÓN 3: SÓLIDO */
+        .modal-panel.style-3 {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 2px solid rgba(255, 255, 255, 0.8);
+        }
+
+        .modal-badge {
+            position: absolute;
+            top: -15px;
+            right: 30px;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .modal-title {
+            font-size: 26px;
+            font-weight: 700;
+            color: #1a1a2e;
+        }
+
+        .modal-close {
+            background: rgba(0, 0, 0, 0.08);
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 24px;
+            color: #666;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            background: rgba(0, 0, 0, 0.15);
+            transform: rotate(90deg);
+        }
+
+        .modal-content {
+            font-size: 15px;
+            color: #333;
+            line-height: 1.8;
+        }
+
+        .animation-demo {
+            background: rgba(102, 126, 234, 0.1);
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .animation-demo strong {
+            display: block;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .test-counter {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            font-family: monospace;
+            z-index: 999;
+        }
+
+        .test-counter strong {
+            color: #10b981;
+            font-size: 18px;
+        }
+
+        @media (max-width: 1000px) {
+            .options-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="test-counter">
+        Pruebas: <strong id="testCount">0</strong>
+    </div>
+
+    <div class="header">
+        <h1>🎬 DEMO CON ANIMACIONES COMPLETAS</h1>
+        <p style="font-size: 16px; color: #666; margin-bottom: 20px;">
+            Haz clic en cada opción para ver las animaciones de <strong>apertura</strong> y <strong>cierre</strong>
+        </p>
+        <div
+            style="background: rgba(59, 130, 246, 0.1); border-left: 4px solid #3b82f6; padding: 15px; border-radius: 8px; text-align: left;">
+            <strong style="color: #1e40af; display: block; margin-bottom: 10px;">✨ Ahora SÍ verás las
+                animaciones:</strong>
+            <ul style="color: #1e3a8a; list-style: none; padding: 0;">
+                <li style="margin-bottom: 8px;">✓ Fade In/Out del fondo oscuro (0.4s)</li>
+                <li style="margin-bottom: 8px;">✓ Slide In del modal desde abajo (0.4s)</li>
+                <li style="margin-bottom: 8px;">✓ Slide Out del modal hacia abajo (0.4s)</li>
+                <li style="margin-bottom: 8px;">✓ Timing coordinado y suave</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="options-grid">
+        <!-- OPCIÓN 1 -->
+        <div class="option-card">
+            <div class="option-badge badge-1">⭐ Recomendada</div>
+            <div class="option-title">Opción 1<br>Pseudovidrio</div>
+            <div class="option-desc">
+                Gradientes avanzados que simulan vidrio. Compatible con todas las animaciones.
+            </div>
+            <button class="test-btn test-btn-1" onclick="openModal(1)">
+                Ver Animación Opción 1
+            </button>
+        </div>
+
+        <!-- OPCIÓN 2 -->
+        <div class="option-card">
+            <div class="option-badge badge-2">⚠️ Riesgosa</div>
+            <div class="option-title">Opción 2<br>Vidrio Real</div>
+            <div class="option-desc">
+                Backdrop-filter verdadero. Puede fallar después de varias aperturas.
+            </div>
+            <button class="test-btn test-btn-2" onclick="openModal(2)">
+                Ver Animación Opción 2
+            </button>
+        </div>
+
+        <!-- OPCIÓN 3 -->
+        <div class="option-card">
+            <div class="option-badge badge-3">🛡️ Estable</div>
+            <div class="option-title">Opción 3<br>Sólido Premium</div>
+            <div class="option-desc">
+                Modal muy opaco. Máxima legibilidad y cero riesgo de fallas.
+            </div>
+            <button class="test-btn test-btn-3" onclick="openModal(3)">
+                Ver Animación Opción 3
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL -->
+    <div class="modal-overlay" id="modal" onclick="if(event.target === this) closeModal()">
+        <div class="modal-panel" id="modalPanel">
+            <div class="modal-badge" id="modalBadge">Opción</div>
+            <div class="modal-header">
+                <div class="modal-title">Editar Turno</div>
+                <button class="modal-close" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-content">
+                <p style="margin-bottom: 15px;">
+                    <strong>Observa la animación:</strong>
+                </p>
+                <div class="animation-demo">
+                    <strong>🎬 Al Abrir:</strong>
+                    • Fondo oscurece suavemente (fade in)<br>
+                    • Modal sube desde abajo (slide in)<br>
+                    • Ambos simultáneamente en 0.4 segundos
+                </div>
+                <div class="animation-demo">
+                    <strong>🎬 Al Cerrar:</strong>
+                    • Modal baja hacia abajo (slide out)<br>
+                    • Fondo aclara suavemente (fade out)<br>
+                    • Ambos simultáneamente en 0.4 segundos
+                </div>
+                <p
+                    style="margin-top: 20px; padding-top: 20px; border-top: 2px solid rgba(0,0,0,0.1); font-size: 13px; color: #888; text-align: center;">
+                    Cierra este modal para ver la animación de salida<br>
+                    Prueba #<strong id="modalTestCount">0</strong>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let testCount = 0;
+        let currentOption = 1;
+        let isClosing = false;
+
+        const badges = {
+            1: { text: 'Opción 1: Pseudovidrio', bg: 'linear-gradient(135deg, #10b981, #059669)' },
+            2: { text: 'Opción 2: Vidrio Real', bg: 'linear-gradient(135deg, #f59e0b, #d97706)' },
+            3: { text: 'Opción 3: Sólido Premium', bg: 'linear-gradient(135deg, #6366f1, #4f46e5)' }
+        };
+
+        function openModal(option) {
+            if (isClosing) return;
+
+            testCount++;
+            currentOption = option;
+
+            document.getElementById('testCount').textContent = testCount;
+            document.getElementById('modalTestCount').textContent = testCount;
+
+            const modal = document.getElementById('modal');
+            const panel = document.getElementById('modalPanel');
+            const badge = document.getElementById('modalBadge');
+
+            // Reset classes
+            panel.className = 'modal-panel';
+            modal.classList.remove('closing');
+
+            // Apply style
+            panel.classList.add(`style-${option}`);
+
+            // Update badge
+            badge.textContent = badges[option].text;
+            badge.style.background = badges[option].bg;
+
+            // Show modal
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            if (isClosing) return;
+
+            const modal = document.getElementById('modal');
+
+            // Add closing class to trigger exit animations
+            modal.classList.add('closing');
+            isClosing = true;
+
+            // Wait for animation to complete, then remove
+            setTimeout(() => {
+                modal.classList.remove('active', 'closing');
+                isClosing = false;
+            }, 400); // Match animation duration (0.4s = 400ms)
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            } else if (e.key === '1') {
+                openModal(1);
+            } else if (e.key === '2') {
+                openModal(2);
+            } else if (e.key === '3') {
+                openModal(3);
+            }
+        });
+
+        console.log('🎬 DEMO CON ANIMACIONES COMPLETAS');
+        console.log('✓ Presiona 1, 2, o 3 para probar cada opción');
+        console.log('✓ Presiona ESC para cerrar');
+        console.log('✓ Observa las animaciones de entrada y salida');
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alternativas de Diseño - Tarjetas de Turnos</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #1a1a1a;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2.5rem;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 40px;
+            margin-bottom: 60px;
+        }
+        
+        .option-section {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .option-title {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .option-description {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.875rem;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+        
+        /* OPTION A: Minimal Glass Card */
+        .card-option-a {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(30px) saturate(180%) brightness(1.1);
+            -webkit-backdrop-filter: blur(30px) saturate(180%) brightness(1.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card-option-a::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50%;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent);
+            pointer-events: none;
+            border-radius: 20px 20px 0 0;
+        }
+        
+        .card-option-a:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2), 
+                        0 0 0 1px rgba(255, 255, 255, 0.4);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 16px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .day-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: white;
+            line-height: 1;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .day-name {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
+        .shift-info {
+            position: relative;
+            z-index: 1;
+            background: rgba(255, 255, 255, 0.15);
+            padding: 12px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .shift-type {
+            font-weight: 600;
+            color: white;
+            font-size: 0.875rem;
+            margin-bottom: 4px;
+        }
+        
+        .shift-time {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.8);
+            font-family: 'Courier New', monospace;
+        }
+        
+        /* OPTION B: Layered Depth Card */
+        .card-option-b {
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+        
+        .card-option-b:hover {
+            transform: scale(1.02);
+        }
+        
+        .card-option-b::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            background: linear-gradient(135deg, 
+                rgba(255, 255, 255, 0.4), 
+                rgba(255, 255, 255, 0.1));
+            border-radius: 22px;
+            z-index: 0;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .card-option-b:hover::before {
+            opacity: 1;
+        }
+        
+        .card-b-inner {
+            position: relative;
+            z-index: 1;
+            background: linear-gradient(135deg, 
+                rgba(255, 255, 255, 0.25) 0%, 
+                rgba(255, 255, 255, 0.1) 100%);
+            backdrop-filter: blur(40px) saturate(150%);
+            -webkit-backdrop-filter: blur(40px) saturate(150%);
+            border-radius: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+        }
+        
+        .card-b-date {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .card-b-day {
+            font-size: 2rem;
+            font-weight: 800;
+            color: white;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+        }
+        
+        .card-b-name {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.8);
+            text-transform: capitalize;
+        }
+        
+        .card-b-content {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .card-b-shift {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.1);
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+        
+        .shift-label {
+            font-weight: 600;
+            color: white;
+            font-size: 0.8125rem;
+        }
+        
+        .shift-details {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.7);
+            font-family: 'Courier New', monospace;
+        }
+        
+        /* OPTION C: Frosted Glass Card */
+        .card-option-c {
+            background: linear-gradient(135deg,
+                rgba(255, 255, 255, 0.3),
+                rgba(255, 255, 255, 0.1));
+            backdrop-filter: blur(25px) saturate(200%);
+            -webkit-backdrop-filter: blur(25px) saturate(200%);
+            border-radius: 24px;
+            padding: 24px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+        
+        .card-option-c::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 24px;
+            padding: 2px;
+            background: linear-gradient(135deg,
+                rgba(255, 255, 255, 0.5),
+                rgba(255, 255, 255, 0.1));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, 
+                          linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+        
+        .card-option-c:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25),
+                        0 0 0 2px rgba(255, 255, 255, 0.3);
+        }
+        
+        .card-c-header {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .card-c-day-circle {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.75rem;
+            font-weight: 800;
+            color: white;
+            box-shadow: inset 0 2px 8px rgba(255, 255, 255, 0.3),
+                        0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .card-c-day-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .card-c-weekday {
+            font-size: 1rem;
+            font-weight: 700;
+            color: white;
+            text-transform: capitalize;
+        }
+        
+        .card-c-month {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
+        .card-c-shift-container {
+            background: rgba(0, 0, 0, 0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .card-c-shift-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .card-c-shift-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .shift-icon {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: white;
+            margin-right: 8px;
+            box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+        }
+        
+        .card-c-location {
+            font-size: 0.6875rem;
+            color: rgba(255, 255, 255, 0.6);
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        /* Comparison Section */
+        .comparison-section {
+            margin-top: 60px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .comparison-title {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            color: white;
+            border-collapse: collapse;
+        }
+        
+        .comparison-table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .comparison-table td {
+            padding: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .pro {
+            color: #4ade80;
+        }
+        
+        .con {
+            color: #fb923c;
+        }
+        
+        @media (max-width: 768px) {
+            .options-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 Alternativas de Diseño - Tarjetas de Turnos</h1>
+        
+        <div class="options-grid">
+            <!-- OPTION A -->
+            <div class="option-section">
+                <h2 class="option-title">Opción A: Minimal Glass</h2>
+                <p class="option-description">
+                    Diseño minimalista con vidrio real y reflexión superior. Ideal para interfaces limpias y modernas.
+                </p>
+                
+                <div class="card-option-a">
+                    <div class="card-header">
+                        <div>
+                            <div class="day-number">15</div>
+                            <div class="day-name">Lunes</div>
+                        </div>
+                    </div>
+                    <div class="shift-info">
+                        <div class="shift-type">🌅 Mañana</div>
+                        <div class="shift-time">08:00 - 16:00</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- OPTION B -->
+            <div class="option-section">
+                <h2 class="option-title">Opción B: Layered Depth</h2>
+                <p class="option-description">
+                    Diseño con capas y profundidad, usando gradientes y sombras internas para crear dimensión visual.
+                </p>
+                
+                <div class="card-option-b">
+                    <div class="card-b-inner">
+                        <div class="card-b-date">
+                            <div class="card-b-day">15</div>
+                            <div class="card-b-name">lunes</div>
+                        </div>
+                        <div class="card-b-content">
+                            <div class="card-b-shift">
+                                <span class="shift-label">🌅 Mañana</span>
+                                <span class="shift-details">08:00 - 16:00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- OPTION C -->
+            <div class="option-section">
+                <h2 class="option-title">Opción C: Frosted Circle</h2>
+                <p class="option-description">
+                    Diseño premium con círculo destacado y borde luminoso. Máxima elegancia y sofisticación.
+                </p>
+                
+                <div class="card-option-c">
+                    <div class="card-c-header">
+                        <div class="card-c-day-circle">15</div>
+                        <div class="card-c-day-info">
+                            <div class="card-c-weekday">Lunes</div>
+                            <div class="card-c-month">Diciembre 2025</div>
+                        </div>
+                    </div>
+                    <div class="card-c-shift-container">
+                        <div class="card-c-shift-row">
+                            <span class="shift-label"><span class="shift-icon"></span>Mañana</span>
+                            <span class="shift-details">08:00 - 16:00</span>
+                        </div>
+                        <div class="card-c-location">📍 Tienda</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Comparison Table -->
+        <div class="comparison-section">
+            <h2 class="comparison-title">Comparación de Opciones</h2>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Aspecto</th>
+                        <th>Opción A</th>
+                        <th>Opción B</th>
+                        <th>Opción C</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Elegancia</strong></td>
+                        <td class="pro">⭐⭐⭐⭐</td>
+                        <td class="pro">⭐⭐⭐⭐</td>
+                        <td class="pro">⭐⭐⭐⭐⭐</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Legibilidad</strong></td>
+                        <td class="pro">⭐⭐⭐⭐⭐</td>
+                        <td class="pro">⭐⭐⭐⭐</td>
+                        <td class="pro">⭐⭐⭐⭐</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Compacidad</strong></td>
+                        <td class="pro">⭐⭐⭐⭐⭐</td>
+                        <td class="pro">⭐⭐⭐⭐</td>
+                        <td class="con">⭐⭐⭐</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Efecto Glass</strong></td>
+                        <td class="pro">Intenso</td>
+                        <td class="pro">Premium</td>
+                        <td class="pro">Máximo</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Mejor Para</strong></td>
+                        <td>Vista semanal compacta</td>
+                        <td>Vista quincenal con info completa</td>
+                        <td>Diseño premium, menos densidad</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>
