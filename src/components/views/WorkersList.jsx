@@ -97,6 +97,7 @@ const WorkersList = ({ workers, setWorkers, setSelectedWorkerId, sedes }) => {
     const [lugar, setLugar] = useState('');
     const [showArchived, setShowArchived] = useState(false);
     const [activeId, setActiveId] = useState(null); // For DragOverlay
+    const [isFormOpen, setIsFormOpen] = useState(false); // Collapsible form state
     const toast = useToast();
 
     useEffect(() => { if (sedes.length > 0 && !sede) { setSede(sedes[0].name); } }, [sedes, sede]);
@@ -221,63 +222,84 @@ const WorkersList = ({ workers, setWorkers, setSelectedWorkerId, sedes }) => {
                     </button>
                 </div>
 
-                <form onSubmit={addMember} className="mt-4 glass-panel p-4 rounded-xl flex flex-col md:flex-row gap-3 items-end shadow-sm">
-                    <div className="flex-1 w-full space-y-1">
-                        <label className="text-xs font-bold text-[var(--text-secondary)] ml-1">Nombre</label>
-                        <input
-                            type="text"
-                            placeholder="Nombre Completo"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-[var(--text-tertiary)]"
-                        />
-                    </div>
-                    <div className="flex-1 w-full md:w-48 space-y-1">
-                        <label className="text-xs font-bold text-[var(--text-secondary)] ml-1">Nombre Corto (Opcional)</label>
-                        <input
-                            type="text"
-                            placeholder="Ej: Juan C."
-                            value={displayName}
-                            onChange={(e) => setDisplayName(e.target.value)}
-                            className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-[var(--text-tertiary)]"
-                        />
-                    </div>
-                    <div className="w-full md:w-36 space-y-1">
-                        <label className="text-xs font-bold text-[var(--text-secondary)] ml-1">Cédula (ID)</label>
-                        <input
-                            type="text"
-                            placeholder="Ej: 175222459"
-                            value={cedula}
-                            onChange={(e) => setCedula(e.target.value)}
-                            className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono placeholder:text-[var(--text-tertiary)]"
-                        />
-                    </div>
-                    <div className="w-full md:w-32 space-y-1">
-                        <label className="text-xs font-bold text-[var(--text-secondary)] ml-1">Rol</label>
-                        <input
-                            type="text"
-                            placeholder="Cargo"
-                            value={role}
-                            onChange={(e) => setRole(e.target.value)}
-                            className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                        />
-                    </div>
+                {/* Mobile: Toggle Form Button */}
+                {!isFormOpen && (
+                    <button
+                        onClick={() => setIsFormOpen(true)}
+                        className="w-full mt-4 md:hidden py-3 rounded-xl border border-dashed border-[var(--glass-border)] text-[var(--text-secondary)] font-bold flex items-center justify-center gap-2 hover:bg-[var(--glass-dock)] transition-all"
+                    >
+                        <PlusCircle size={18} />
+                        Añadir Nuevo Miembro
+                    </button>
+                )}
 
-                    <div className="w-full md:w-40 space-y-1">
-                        <label className="text-xs font-bold text-[var(--text-secondary)] ml-1">Sede</label>
-                        <select
-                            value={sede}
-                            onChange={(e) => { setSede(e.target.value); setLugar(''); }}
-                            className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none cursor-pointer"
-                        >
-                            {sedes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                        </select>
-                    </div>
+                {/* Form Container - Collapsible on Mobile */}
+                <div className={`mt-4 overflow-hidden transition-all duration-300 ease-in-out ${isFormOpen ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0 md:max-h-[1000px] md:opacity-100'}`}>
+                    <form onSubmit={(e) => { addMember(e); setIsFormOpen(false); }} className="glass-panel p-4 rounded-xl flex flex-col md:flex-row gap-3 items-end shadow-sm">
+                        <div className="flex-1 w-full space-y-1">
+                            <label className="text-xs font-bold text-[var(--text-secondary)] ml-1">Nombre</label>
+                            <input
+                                type="text"
+                                placeholder="Nombre Completo"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-[var(--text-tertiary)]"
+                            />
+                        </div>
+                        <div className="flex-1 w-full md:w-48 space-y-1">
+                            <label className="text-xs font-bold text-[var(--text-secondary)] ml-1">Nombre Corto</label>
+                            <input
+                                type="text"
+                                placeholder="Ej: Juan C."
+                                value={displayName}
+                                onChange={(e) => setDisplayName(e.target.value)}
+                                className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-[var(--text-tertiary)]"
+                            />
+                        </div>
+                        <div className="w-full md:w-36 space-y-1">
+                            <label className="text-xs font-bold text-[var(--text-secondary)] ml-1">Cédula</label>
+                            <input
+                                type="text"
+                                placeholder="ID"
+                                value={cedula}
+                                onChange={(e) => setCedula(e.target.value)}
+                                className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all font-mono placeholder:text-[var(--text-tertiary)]"
+                            />
+                        </div>
+                        <div className="w-full md:w-32 space-y-1">
+                            <label className="text-xs font-bold text-[var(--text-secondary)] ml-1">Rol</label>
+                            <input
+                                type="text"
+                                placeholder="Cargo"
+                                value={role}
+                                onChange={(e) => setRole(e.target.value)}
+                                className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                            />
+                        </div>
 
-                    <Button type="submit" variant="primary" icon={PlusCircle}>
-                        Añadir
-                    </Button>
-                </form>
+                        <div className="w-full md:w-40 space-y-1">
+                            <label className="text-xs font-bold text-[var(--text-secondary)] ml-1">Sede</label>
+                            <select
+                                value={sede}
+                                onChange={(e) => { setSede(e.target.value); setLugar(''); }}
+                                className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none cursor-pointer"
+                            >
+                                {sedes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                            </select>
+                        </div>
+
+                        <div className="flex gap-2 w-full md:w-auto">
+                            <Button type="submit" variant="primary" icon={PlusCircle} className="flex-1 md:flex-none">
+                                Añadir
+                            </Button>
+                            {isFormOpen && (
+                                <button type="button" onClick={() => setIsFormOpen(false)} className="px-4 py-2 rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)] md:hidden">
+                                    Cancelar
+                                </button>
+                            )}
+                        </div>
+                    </form>
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 pb-24">
@@ -321,7 +343,7 @@ const WorkersList = ({ workers, setWorkers, setSelectedWorkerId, sedes }) => {
                     </DndContext>
                 )}
             </div>
-        </div>
+        </div >
     );
 };
 

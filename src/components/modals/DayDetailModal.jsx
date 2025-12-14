@@ -30,7 +30,7 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings }) => {
 
     return (
         <div className="modal-overlay z-[90] sm:items-center items-end animate-enter" onClick={onClose}>
-            <div className="w-full sm:w-[500px] liquid-glass p-0 rounded-t-3xl sm:rounded-3xl m-0 sm:m-4 max-h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="w-full sm:w-[500px] liquid-glass p-0 rounded-t-[32px] sm:rounded-3xl m-0 sm:m-4 max-h-[80dvh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
                 {/* Mobile Drag Handle */}
                 <div className="sm:hidden flex justify-center pt-3 pb-1">
                     <div className="w-10 h-1 rounded-full bg-[var(--text-tertiary)] opacity-50" />
@@ -45,7 +45,7 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings }) => {
                     <button onClick={onClose} className="p-2 rounded-full bg-[var(--card-bg)] hover:bg-[var(--glass-border)] transition-colors"><X size={20} /></button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                <div className="flex-1 overflow-y-auto p-6 pb-24 space-y-6">
                     {/* WORKING SECTION */}
                     <div>
                         <h3 className="text-xs font-bold uppercase text-[var(--success-text)] mb-3 flex items-center gap-2 bg-[var(--card-bg)] backdrop-filter backdrop-blur-md w-fit px-2 py-1 rounded-lg border border-[var(--glass-border)]" style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><Briefcase size={12} /> Personal Programado ({working.length})</h3>

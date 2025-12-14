@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { LayoutGrid, Cloud, CloudOff, Moon, Sun, ChevronLeft, ChevronRight, List, Info, Shield } from 'lucide-react';
 import SectionHeader from '../shared/SectionHeader';
 import GridWorkerCard from '../shared/GridWorkerCard';
@@ -7,6 +7,22 @@ import { getQuincenaLabel, toLocalISOString, isToday, getShift, getWorkerDisplay
 
 const ScheduleView = ({ theme, toggleTheme, viewMode, setViewMode, currentDate, navigate, daysToShow, workers, shifts, setSelectedCell, setSelectedDayDetail, isSynced, settings }) => {
     const [displayMode, setDisplayMode] = useState('list'); // 'list' or 'grid'
+
+    // Filter workers: Show active workers OR inactive workers that have shifts in the current period
+    const visibleWorkers = useMemo(() => {
+        return workers.filter(w => {
+            if (w.isActive !== false) return true;
+            // For inactive workers, check if they have any assigned shift in the visible days
+            return daysToShow.some(d => {
+                const s = getShift(shifts, w.id, toLocalISOString(d.date));
+                // Show if they have a shift type that is not 'unassigned'
+                // We exclude 'unassigned'. 'off' is technically an assignment (Rest Day), so we include it?
+                // User said "dias que fueron programados". 
+                // If I explicitly mark a rest day, it counts. If it's just blank (unassigned), it doesn't.
+                return s.type && s.type !== 'unassigned';
+            });
+        });
+    }, [workers, shifts, daysToShow]);
 
     return (
         <div className="flex flex-col h-full animate-enter">
@@ -41,60 +57,66 @@ const ScheduleView = ({ theme, toggleTheme, viewMode, setViewMode, currentDate, 
                 {viewMode === 'monthly' ? (
                     <div className="grid grid-cols-7 gap-1">
                         {['D', 'L', 'M', 'X', 'J', 'V', 'S'].map(d => <div key={d} className="text-center text-[10px] font-bold text-[var(--text-secondary)] py-2">{d}</div>)}
-                        {daysToShow.map((d, i) => (<div key={i} onClick={() => setSelectedDayDetail(toLocalISOString(d.date))} className={`min-h-[80px] p-2 rounded-xl border cursor-pointer hover:bg-[var(--glass-border)] transition-colors ${d.isCurrentMonth ? 'bg-[var(--card-bg)] border-[var(--glass-border)]' : 'opacity-30 border-[var(--glass-border)]'} ${isToday(d.date) ? 'ring-2 ring-[var(--text-primary)]' : ''}`}><div className="font-bold text-sm mb-1 text-[var(--text-primary)]">{d.date.getDate()}</div><div className="flex flex-wrap gap-0.5">{workers.slice(0, 5).map(w => { const s = getShift(shifts, w.id, toLocalISOString(d.date)); if (s.type === 'off' || s.type === 'unassigned') return null; return <div key={w.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: w.color }} /> })}{workers.length > 5 && <span className="text-[8px]">+</span>}</div></div>))}
+                        {daysToShow.map((d, i) => (<div key={i} onClick={() => setSelectedDayDetail(toLocalISOString(d.date))} className={`min-h-[80px] p-2 rounded-xl border cursor-pointer hover:bg-[var(--glass-border)] transition-colors ${d.isCurrentMonth ? 'bg-[var(--card-bg)] border-[var(--glass-border)]' : 'opacity-30 border-[var(--glass-border)]'} ${isToday(d.date) ? 'ring-2 ring-[var(--text-primary)]' : ''}`}><div className="font-bold text-sm mb-1 text-[var(--text-primary)]">{d.date.getDate()}</div><div className="flex flex-wrap gap-0.5">{visibleWorkers.filter(w => w.isActive !== false || getShift(shifts, w.id, toLocalISOString(d.date)).type).slice(0, 5).map(w => { const s = getShift(shifts, w.id, toLocalISOString(d.date)); if (s.type === 'off' || s.type === 'unassigned') return null; return <div key={w.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: w.color }} /> })}{visibleWorkers.filter(w => w.isActive !== false || getShift(shifts, w.id, toLocalISOString(d.date)).type).length > 5 && <span className="text-[8px]">+</span>}</div></div>))}
                     </div>
                 ) : (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {daysToShow.map(d => (<div key={toLocalISOString(d.date)} className={`day-card rounded-2xl p-4 h-full flex flex-col ${isToday(d.date) ? 'today-highlight' : ''}`}><div className="flex justify-between items-baseline mb-3"><div className="flex items-baseline gap-2"><span className="text-xl font-bold text-[var(--text-primary)]">{d.date.getDate()}</span><span className="text-sm text-[var(--text-secondary)] uppercase">{d.date.toLocaleDateString('es-ES', { weekday: 'long' })}</span></div><button onClick={() => setSelectedDayDetail(toLocalISOString(d.date))} className="p-1.5 rounded-lg bg-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors" title="Ver detalle del día"><Info size={16} /></button></div>
-                            {displayMode === 'list' ? (
-                                <div className="space-y-2 flex-1">{workers.map(w => {
-                                    const s = getShift(shifts, w.id, toLocalISOString(d.date));
-                                    const type = SHIFT_TYPES[s.type || 'off'];
-                                    const shiftLabel = s.type === 'custom' && s.customShiftName ? s.customShiftName : type.label;
-                                    const coveredPerson = s.coveringId ? workers.find(cw => cw.id === s.coveringId) : null;
+                        {daysToShow.map(d => {
+                            const dateStr = toLocalISOString(d.date);
+                            const dayWorkers = visibleWorkers.filter(w => {
+                                if (w.isActive !== false) return true;
+                                const s = getShift(shifts, w.id, dateStr);
+                                return s.type && s.type !== 'unassigned';
+                            });
 
-                                    // Custom Color Logic (Same as GridWorkerCard)
-                                    let customColor = s.type === 'custom' && s.customShiftColor
-                                        ? SHIFT_COLORS.find(c => c.id === s.customShiftColor)
-                                        : null;
-
-                                    if (!customColor && s.type === 'custom' && settings?.customShifts) {
-                                        const def = settings.customShifts.find(cs =>
-                                            (s.customShiftId && cs.id === s.customShiftId) ||
-                                            (s.code && cs.code === s.code) ||
-                                            (s.customShiftName && cs.name === s.customShiftName)
-                                        );
-                                        if (def && def.color) {
-                                            customColor = SHIFT_COLORS.find(c => c.id === def.color);
-                                        }
-                                    }
-
-                                    // Use custom color style if available, otherwise use type style (with opacity adjustment for list view consistency if needed)
-                                    // Note: SHIFT_COLORS bg is already light (100), so we use it directly or adjust transparency if the design calls for it.
-                                    // The original code did .replace('bg-', 'bg-opacity-20 '), but customColor.bg is e.g. 'bg-blue-100'. 
-                                    const labelStyle = customColor
-                                        ? `${customColor.bg} ${customColor.text} ${customColor.border || ''}`
-                                        : type.style.replace('bg-', 'bg-opacity-20 ');
-
-                                    return (
-                                        <div key={w.id} onClick={() => setSelectedCell({ workerId: w.id, dateStr: toLocalISOString(d.date) })} className="flex items-center justify-between p-2 rounded-lg hover:bg-[var(--glass-border)] cursor-pointer" style={{ borderLeft: `3px solid ${w.color}` }}>
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-medium pl-2 text-[var(--text-primary)]">{getWorkerDisplayName(w)}</span>
-                                                {coveredPerson && <span className="text-[10px] text-[var(--text-secondary)] pl-2 flex items-center gap-1"><Shield size={10} /> Releva a: {getWorkerDisplayName(coveredPerson)}</span>}
-                                            </div>
-                                            <div className={`text-[10px] font-bold px-2 py-1 rounded ${labelStyle}`}>{shiftLabel}</div>
+                            return (
+                                <div key={dateStr} className={`day-card rounded-2xl p-4 h-full flex flex-col ${isToday(d.date) ? 'today-highlight' : ''}`}>
+                                    <div className="flex justify-between items-baseline mb-3">
+                                        <div className="flex items-baseline gap-2">
+                                            <span className="text-xl font-bold text-[var(--text-primary)]">{d.date.getDate()}</span>
+                                            <span className="text-sm text-[var(--text-secondary)] uppercase">{d.date.toLocaleDateString('es-ES', { weekday: 'long' })}</span>
                                         </div>
-                                    )
-                                })}</div>
-                            ) : (
-                                <div className="grid grid-cols-3 gap-2 flex-1 content-start">
-                                    {workers.map(w => {
-                                        const s = getShift(shifts, w.id, toLocalISOString(d.date));
-                                        return <GridWorkerCard key={w.id} worker={w} shift={s} onClick={() => setSelectedCell({ workerId: w.id, dateStr: toLocalISOString(d.date) })} settings={settings} />;
-                                    })}
+                                        <button onClick={() => setSelectedDayDetail(dateStr)} className="p-1.5 rounded-lg bg-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors" title="Ver detalle del día"><Info size={16} /></button>
+                                    </div>
+                                    {displayMode === 'list' ? (
+                                        <div className="space-y-2 flex-1">
+                                            {dayWorkers.map(w => {
+                                                const s = getShift(shifts, w.id, dateStr);
+                                                const type = SHIFT_TYPES[s.type || 'off'];
+                                                const shiftLabel = s.type === 'custom' && s.customShiftName ? s.customShiftName : type.label;
+                                                const coveredPerson = s.coveringId ? workers.find(cw => cw.id === s.coveringId) : null;
+                                                let customColor = null;
+                                                if (s.type === 'custom') {
+                                                    if (s.customShiftColor) customColor = SHIFT_COLORS.find(c => c.id === s.customShiftColor);
+                                                    else if (settings?.customShifts) {
+                                                        const def = settings.customShifts.find(cs => (s.customShiftId && cs.id === s.customShiftId) || (s.code && cs.code === s.code));
+                                                        if (def?.color) customColor = SHIFT_COLORS.find(c => c.id === def.color);
+                                                    }
+                                                }
+                                                const labelStyle = customColor ? `${customColor.bg} ${customColor.text} ${customColor.border || ''}` : type.style.replace('bg-', 'bg-opacity-20 ');
+
+                                                return (
+                                                    <div key={w.id} onClick={() => setSelectedCell({ workerId: w.id, dateStr })} className="flex items-center justify-between p-2 rounded-lg hover:bg-[var(--glass-border)] cursor-pointer" style={{ borderLeft: `3px solid ${w.color}` }}>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-medium pl-2 text-[var(--text-primary)]">{getWorkerDisplayName(w)}</span>
+                                                            {coveredPerson && <span className="text-[10px] text-[var(--text-secondary)] pl-2 flex items-center gap-1"><Shield size={10} /> Releva a: {getWorkerDisplayName(coveredPerson)}</span>}
+                                                        </div>
+                                                        <div className={`text-[10px] font-bold px-2 py-1 rounded ${labelStyle}`}>{shiftLabel}</div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-3 gap-2 flex-1 content-start">
+                                            {dayWorkers.map(w => {
+                                                const s = getShift(shifts, w.id, dateStr);
+                                                return <GridWorkerCard key={w.id} worker={w} shift={s} onClick={() => setSelectedCell({ workerId: w.id, dateStr })} settings={settings} />;
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>))}
+                            );
+                        })}
                     </div>
                 )}
             </div>

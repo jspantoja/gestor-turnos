@@ -243,11 +243,12 @@ const App = () => {
                                     setShifts={setShifts}
                                     autoScheduleReliever={autoScheduleReliever}
                                     sedes={settings.sedes}
+                                    settings={settings}
                                 />
                             </ErrorBoundary>
                         ) : (
                             <ErrorBoundary>
-                                {activeTab === 'schedule' && <ScheduleView theme={theme} toggleTheme={toggleTheme} viewMode={viewMode} setViewMode={setViewMode} currentDate={currentDate} navigate={navigate} daysToShow={daysToShow} workers={activeWorkers} shifts={shifts} setSelectedCell={setSelectedCell} setSelectedDayDetail={setSelectedDayDetail} isSynced={isSynced} settings={settings} />}
+                                {activeTab === 'schedule' && <ScheduleView theme={theme} toggleTheme={toggleTheme} viewMode={viewMode} setViewMode={setViewMode} currentDate={currentDate} navigate={navigate} daysToShow={daysToShow} workers={workers} shifts={shifts} setSelectedCell={setSelectedCell} setSelectedDayDetail={setSelectedDayDetail} isSynced={isSynced} settings={settings} />}
                                 {activeTab === 'rest_days' && (
                                     <Suspense fallback={<SkeletonPage />}>
                                         <RestDaysView currentDate={currentDate} setCurrentDate={setCurrentDate} workers={activeWorkers} shifts={shifts} setShifts={setShifts} weeklyNotes={weeklyNotes} setWeeklyNotes={setWeeklyNotes} weeklyChecklists={weeklyChecklists} setWeeklyChecklists={setWeeklyChecklists} settings={settings} />

@@ -107,6 +107,22 @@ const GlobalStyles = ({ accentColor, glassIntensity, reducedMotion, settings = {
     }
 
     /* ===================================
+       CUSTOM SCROLLBAR
+    =================================== */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: var(--glass-border);
+      background-clip: padding-box;
+      border: 3px solid transparent;
+      border-radius: 99px;
+      transition: background 0.2s ease;
+    }
+    ::-webkit-scrollbar-thumb:active { background: var(--text-secondary); border-width: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); border: 3px solid transparent; background-clip: padding-box; }
+    ::-webkit-scrollbar-corner { background: transparent; }
+
+    /* ===================================
        GLOBAL FOCUS STATES (Accessibility)
     =================================== */
     *:focus {

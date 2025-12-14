@@ -396,7 +396,7 @@ const PayrollRow = ({ worker, daysToShow, shifts, holidays, setSelectedCell, get
             {/* Columna Nombre Sticky */}
             <td className="report-sticky-col p-3 border-b border-[var(--glass-border)] text-sm font-medium text-[var(--text-primary)] truncate max-w-[200px] bg-[var(--bg-body)] z-10">
                 <div className="flex items-center gap-2 truncate">
-                    {worker.name}
+                    <span>{worker.name}</span>
                     {worker.isReliever && <span className="reliever-tag px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700 font-bold">Relevo</span>}
                 </div>
             </td>
@@ -464,7 +464,25 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
     const scrollContainerRef = useRef(null);
 
     // Filtra a los trabajadores para mostrar solo los activos
-    const activeWorkers = useMemo(() => workers.filter(w => w.isActive !== false), [workers]);
+
+
+    // Filter workers: Show active workers OR inactive workers that have shifts in the current period
+    const activeWorkers = useMemo(() => {
+        return workers.filter(w => {
+            if (w.isActive !== false) return true;
+            // For inactive workers, check if they have any assigned shift in the visible days
+            // For Payroll, we might want to be stricter (only if Worked?) 
+            // Or consistent with Schedule (if assigned).
+            return daysToShow.some(d => {
+                const s = getShift(shifts, w.id, toLocalISOString(d.date));
+                // Show if they have a shift type that is not 'unassigned' and not 'off' (unless we want to show Rest Days for archived people?)
+                // Usually for payroll, if they have 'off' it doesn't affect pay unless paid rest?
+                // But visibility suggests showing the row.
+                // Let's stick to consistent logic: Show if not 'unassigned'.
+                return s.type && s.type !== 'unassigned';
+            });
+        });
+    }, [workers, shifts, daysToShow]);
 
     useEffect(() => { setViewMode('biweekly'); }, []);
 
