@@ -107,3 +107,61 @@ export const clearPeriod = (workerId, startDateStr, endDateStr) => {
     }
     return updates;
 };
+
+/**
+ * Generates random rest days within a period.
+ * Preserves existing shifts on non-selected days (does not clear them),
+ * but overwrites selected days with 'off'.
+ * 
+ * @param {string} workerId 
+ * @param {string} startDateStr 
+ * @param {string} endDateStr 
+ * @param {number} restsPerWeek - Number of rest days to assign per week
+ * @returns {Object} Updates object
+ */
+export const generateRandomRests = (workerId, startDateStr, endDateStr, restsPerWeek = 1) => {
+    const updates = {};
+    const start = new Date(startDateStr + 'T00:00:00');
+    const end = new Date(endDateStr + 'T00:00:00');
+
+    // Normalize to start of strictly defined weeks? 
+    // Or just iterate day by day and count 7-day blocks from start?
+    // Let's use 7-day blocks processing from StartDate.
+
+    let currentBlockStart = new Date(start);
+
+    while (currentBlockStart <= end) {
+        // Define block end (Start + 6 days) or EndDate, whichever comes first
+        let blockEnd = new Date(currentBlockStart);
+        blockEnd.setDate(blockEnd.getDate() + 6);
+        if (blockEnd > end) blockEnd = new Date(end); // Handle partial week at end if any
+
+        // Collect all dates in this block
+        const blockDates = [];
+        let d = new Date(currentBlockStart);
+        while (d <= blockEnd) {
+            blockDates.push(new Date(d));
+            d.setDate(d.getDate() + 1);
+        }
+
+        // Pick N random dates from this block
+        // If block is short (e.g. 2 days), we might not be able to pick N if N > available.
+        const numToPick = Math.min(restsPerWeek, blockDates.length);
+
+        // Shuffle array to pick random
+        const available = [...blockDates];
+        for (let i = 0; i < numToPick; i++) {
+            if (available.length === 0) break;
+            const randomIndex = Math.floor(Math.random() * available.length);
+            const pickedDate = available.splice(randomIndex, 1)[0];
+
+            const dateKey = toLocalISOString(pickedDate);
+            updates[`${workerId}_${dateKey}`] = { type: 'off' };
+        }
+
+        // Advance to next block
+        currentBlockStart.setDate(currentBlockStart.getDate() + 7);
+    }
+
+    return updates;
+};

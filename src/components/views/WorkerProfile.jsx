@@ -1,9 +1,9 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { ArrowLeft, Camera, CheckSquare, Share2, Building, MapPin, Briefcase, Calendar, ChevronLeft, ChevronRight, FileText, Plus, X, Image, MessageSquare, Check, Trash2, StickyNote, AlertCircle, RefreshCw, Layers } from 'lucide-react';
+import { ArrowLeft, Camera, CheckSquare, Share2, Building, MapPin, Briefcase, Calendar, ChevronLeft, ChevronRight, FileText, Plus, X, Image, MessageSquare, Check, Trash2, StickyNote, AlertCircle, RefreshCw, Layers, Sparkles, Dices } from 'lucide-react';
 import { EMPLOYEE_COLORS, SHIFT_TYPES, SHIFT_ICONS } from '../../config/constants';
 import { toLocalISOString, addDays, isToday, getShift } from '../../utils/helpers';
 import { workerSchema, validate } from '../../utils/validation';
-import { calculateRotation, clearPeriod } from '../../utils/rotationLogic';
+import { calculateRotation, clearPeriod, generateRandomRests } from '../../utils/rotationLogic';
 import Button from '../shared/Button';
 import { useToast } from '../shared/Toast';
 
@@ -19,7 +19,8 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
     // Rotation System State
     const [showRotationPanel, setShowRotationPanel] = useState(false);
     const [rotationSequence, setRotationSequence] = useState(initialWorker.rotationSequence || []);
-    const [rotationDuration, setRotationDuration] = useState(3); // Months
+    const [rotationDuration, setRotationDuration] = useState(3);
+    const [rotationDurationUnit, setRotationDurationUnit] = useState('months'); // months, weeks, days
     const [rotationStartDate, setRotationStartDate] = useState(toLocalISOString(new Date()));
     const [rotationDays, setRotationDays] = useState([1, 2, 3, 4, 5, 6]); // Mon-Sat default
 
@@ -48,6 +49,32 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
         const updatedWorker = { ...worker, ...updates };
         setWorker(updatedWorker);
         setWorkers(prev => prev.map(w => w.id === worker.id ? updatedWorker : w));
+    };
+
+    // --- CORRECCIÓN DE LÓGICA ---
+    // undefined/null = todos permitidos (comportamiento por defecto)
+    // [] = ninguno permitido
+    // ['code1', 'code2'] = solo esos permitidos
+    const handleAllowedShiftsChange = (shiftCode, isChecked) => {
+        // Si es undefined (todos), inicializamos con la lista completa para poder deseleccionar.
+        const currentAllowed = worker.allowedShifts === undefined || worker.allowedShifts === null
+            ? settings.customShifts.map(cs => cs.code)
+            : worker.allowedShifts;
+
+        let newAllowed;
+
+        if (isChecked) {
+            // Add shift if not present
+            newAllowed = [...new Set([...currentAllowed, shiftCode])];
+        } else {
+            // Remove shift
+            newAllowed = currentAllowed.filter(code => code !== shiftCode);
+        }
+
+        // Si el resultado es que todos están marcados, volvemos al estado `undefined` para "todos permitidos".
+        if (newAllowed.length === settings.customShifts.length) newAllowed = undefined;
+
+        updateSimpleField({ allowedShifts: newAllowed });
     };
 
     // ... (Existing Note/Avatar logic remains unchanged)
@@ -228,6 +255,178 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
         toast.show("Periodo limpiado correctamente.", "success");
     };
 
+    // --- AUTO PATTERN GENERATOR ---
+    const generatePattern = (patternType) => {
+        if (rotationSequence.length > 0) {
+            if (!window.confirm("Esto reemplazará tu secuencia actual. ¿Continuar?")) return;
+        }
+
+        let newSeq = [];
+
+        if (patternType === '6x1') {
+            // Estándar 6x1: L-S Mañana, Domingo Descanso
+            const days = {};
+            for (let i = 0; i <= 6; i++) {
+                days[i] = (i === 0) ? { type: 'off' } : { type: 'morning', start: '08:00', end: '16:00' };
+            }
+            newSeq.push({ id: Date.now(), name: 'Semana Estándar (6x1)', days });
+        }
+        else if (patternType === '5x2') {
+            // Estándar 5x2: L-V Mañana, S-D Descanso
+            const days = {};
+            for (let i = 0; i <= 6; i++) {
+                days[i] = (i === 0 || i === 6) ? { type: 'off' } : { type: 'morning', start: '08:00', end: '16:00' };
+            }
+            newSeq.push({ id: Date.now(), name: 'Semana Oficinista (5x2)', days });
+        }
+        else if (patternType === 'random') {
+            // Generar 4 semanas variadas
+            // Sugerencia: 1 Sem Mañana, 1 Sem Tarde, 1 Sem Noche, 1 Sem Mixta
+            const shifts = ['morning', 'afternoon', 'night'];
+
+            for (let w = 1; w <= 4; w++) {
+                const days = {};
+                // Pick a dominant shift for the week
+                const domShift = shifts[(w - 1) % 3];
+                // Random rest day (0=Sun, but let's vary it, e.g. Sun or Mon? Lets keep Sun fixed for simplicity or random)
+                // User asked for "autoprogramen tambien los dias de descanso" -> implied variety.
+                const restDay = Math.floor(Math.random() * 7);
+
+                for (let i = 0; i <= 6; i++) {
+                    if (i === restDay) {
+                        days[i] = { type: 'off' };
+                    } else {
+                        // 20% chance of random deviation from dominant shift? No, keep it clean for now.
+                        const def = domShift === 'morning' ? { start: '08:00', end: '16:00' } : domShift === 'afternoon' ? { start: '14:00', end: '22:00' } : { start: '22:00', end: '06:00' };
+                        days[i] = { type: domShift, ...def };
+                    }
+                }
+                newSeq.push({ id: Date.now() + w, name: `Semana ${w} (${domShift === 'morning' ? 'M' : domShift === 'afternoon' ? 'T' : 'N'}) - Descansa: ${['D', 'L', 'M', 'X', 'J', 'V', 'S'][restDay]}`, days });
+            }
+        }
+
+        setRotationSequence(newSeq);
+        updateSimpleField({ rotationSequence: newSeq });
+        toast.show("Patrón generado exitosamente.", "success");
+    };
+
+    // --- SMART FILL LOGIC ---
+    const smartFillWeek = (weekIdx) => {
+        const week = rotationSequence[weekIdx];
+        if (!week) return;
+
+        // 1. Identify Source Shift (Priority: Monday (1) > Sunday (0) > First Found)
+        let sourceShift = week.days?.[1];
+        if (!sourceShift || sourceShift.type === 'off') sourceShift = week.days?.[0];
+        if (!sourceShift || sourceShift.type === 'off') {
+            // Fallback to find first working day
+            const foundKey = Object.keys(week.days || {}).find(k => week.days[k].type !== 'off');
+            if (foundKey) sourceShift = week.days[foundKey];
+        }
+
+        if (!sourceShift || !sourceShift.type || sourceShift.type === 'off') {
+            toast.show("Configura primero un turno (ej. Lunes) para replicar.", "error");
+            return;
+        }
+
+        const newDays = { ...week.days };
+
+        const timeToMin = (t) => {
+            if (!t) return 0;
+            const [h, m] = t.split(':').map(Number);
+            return h * 60 + m;
+        };
+
+        const sourceStart = timeToMin(sourceShift.start);
+        // sourceEnd unused but calculated in prev version. Skip duration calc for now.
+
+        // 2. Iterate all days
+        for (let i = 0; i < 7; i++) {
+            // Check if Source is valid for this day
+            let targetType = sourceShift.type;
+            let targetCode = sourceShift.code;
+            let targetProps = { ...sourceShift };
+
+            let isValid = true;
+            if (targetType === 'custom') {
+                const shiftDef = settings.customShifts.find(cs => cs.code === targetCode);
+                if (shiftDef && shiftDef.allowedDays && !shiftDef.allowedDays.includes(i)) {
+                    isValid = false;
+                }
+            }
+
+            if (isValid) {
+                newDays[i] = { ...targetProps };
+            } else {
+                // INTELLIGENT FALLBACK
+                const bestMatch = settings.customShifts.find(cs => {
+                    if (cs.allowedDays && !cs.allowedDays.includes(i)) return false;
+                    const cStart = timeToMin(cs.start);
+                    // Match Start Time exactly, or very close
+                    return Math.abs(cStart - sourceStart) < 30; // 30 min tolerance
+                });
+
+                if (bestMatch) {
+                    newDays[i] = {
+                        type: 'custom',
+                        code: bestMatch.code,
+                        start: bestMatch.start,
+                        end: bestMatch.end,
+                        customShiftId: bestMatch.id,
+                        customShiftName: bestMatch.name,
+                        customShiftIcon: bestMatch.icon,
+                        customShiftColor: bestMatch.color
+                    };
+                } else {
+                    // Fallback to Standard
+                    let stdType = 'morning';
+                    if (sourceStart >= 720 && sourceStart < 1080) stdType = 'afternoon';
+                    else if (sourceStart >= 1080 || sourceStart < 360) stdType = 'night';
+
+                    newDays[i] = {
+                        type: stdType,
+                        start: sourceShift.start,
+                        end: sourceShift.end
+                    };
+                }
+            }
+        }
+
+        const newSeq = [...rotationSequence];
+        newSeq[weekIdx] = { ...week, days: newDays };
+        setRotationSequence(newSeq);
+        updateSimpleField({ rotationSequence: newSeq });
+        toast.show("Semana replicada inteligentemente.", "success");
+    };
+
+    const handleGenerateRandomRests = () => {
+        const restsInput = window.prompt("¿Cuántos días de descanso aleatorios por semana deseas asignar? (ej. 1 o 2)", "1");
+        if (!restsInput) return;
+        const restsPerWeek = parseInt(restsInput);
+        if (isNaN(restsPerWeek) || restsPerWeek < 1) {
+            toast.show("Número inválido.", "error");
+            return;
+        }
+
+        // Calculate End Date
+        const start = new Date(rotationStartDate + 'T00:00:00');
+        const end = new Date(start);
+
+        if (rotationDurationUnit === 'months') end.setMonth(end.getMonth() + rotationDuration);
+        else if (rotationDurationUnit === 'weeks') end.setDate(end.getDate() + (rotationDuration * 7));
+        else if (rotationDurationUnit === 'days') end.setDate(end.getDate() + rotationDuration);
+
+        // Call Logic
+        const updates = generateRandomRests(worker.id, rotationStartDate, toLocalISOString(end), restsPerWeek);
+
+        if (Object.keys(updates).length > 0) {
+            setShifts(prev => ({ ...prev, ...updates }));
+            toast.show(`Descansos asignados aleatoriamente (${Object.keys(updates).length} días).`, "success");
+        } else {
+            toast.show("No se pudieron generar descansos (revisa las fechas).", "warning");
+        }
+    };
+
     const selectedSedeObj = sedes.find(s => s.name === (worker.sede || worker.location));
     const availablePlaces = selectedSedeObj ? selectedSedeObj.places : [];
 
@@ -315,12 +514,29 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
 
                             {/* 1. Sequence Builder (Weeks) */}
                             <div className="space-y-6 mb-8">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="text-xs font-bold text-[var(--text-tertiary)] flex items-center gap-2">
+                                        Generar Automáticamente:
+                                        <select
+                                            onChange={(e) => { if (e.target.value) generatePattern(e.target.value); e.target.value = ''; }}
+                                            className="bg-[var(--glass-dock)] border border-[var(--glass-border)] rounded-lg px-2 py-1 outline-none cursor-pointer hover:bg-[var(--glass-border)] transition-colors"
+                                        >
+                                            <option value="">-- Seleccionar Patrón --</option>
+                                            <option value="6x1">Estándar 6x1 (Dom. Descanso)</option>
+                                            <option value="5x2">Oficina 5x2 (Sáb-Dom Descanso)</option>
+                                            <option value="random">🌟 Sugerencia Inteligente (4 Semanas)</option>
+                                        </select>
+                                    </div>
+                                </div>
+
                                 {rotationSequence.map((week, weekIdx) => (
                                     <div key={week.id || weekIdx} className="glass-panel p-4 rounded-xl border border-[var(--glass-border)] animate-enter relative">
                                         <div className="flex items-center justify-between mb-3">
                                             <h4 className="text-sm font-bold text-[var(--text-primary)]">Semana {weekIdx + 1}</h4>
                                             <div className="flex items-center gap-2">
                                                 <div className="flex gap-1">
+                                                    <button onClick={() => smartFillWeek(weekIdx)} className="px-2 py-1 text-[10px] bg-purple-500/10 text-purple-500 rounded hover:bg-purple-500/20 transition-colors flex items-center gap-1 font-bold" title="Replicar Inteligentemente (Basado en Lunes)"><RefreshCw size={10} /> Smart</button>
+                                                    <div className="w-[1px] h-4 bg-[var(--glass-border)] mx-1"></div>
                                                     <button onClick={() => fillWeek(weekIdx, 'morning')} className="px-2 py-1 text-[10px] bg-yellow-500/10 text-yellow-500 rounded hover:bg-yellow-500/20 transition-colors" title="Rellenar Mañanas">M</button>
                                                     <button onClick={() => fillWeek(weekIdx, 'afternoon')} className="px-2 py-1 text-[10px] bg-blue-500/10 text-blue-500 rounded hover:bg-blue-500/20 transition-colors" title="Rellenar Tardes">T</button>
                                                     <button onClick={() => fillWeek(weekIdx, 'night')} className="px-2 py-1 text-[10px] bg-indigo-500/10 text-indigo-500 rounded hover:bg-indigo-500/20 transition-colors" title="Rellenar Noches">N</button>
@@ -365,7 +581,12 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
                                                                 <option value="morning">Mañana (M)</option>
                                                                 <option value="afternoon">Tarde (T)</option>
                                                                 <option value="night">Noche (N)</option>
-                                                                {settings?.customShifts?.map(cs => (
+                                                                {settings?.customShifts?.filter(cs => {
+                                                                    const isAllowedByDay = !cs.allowedDays || cs.allowedDays.includes(dayIdx);
+                                                                    // CORRECCIÓN: Si allowedShifts es [], significa NINGUNO.
+                                                                    const isAllowedByWorker = worker.allowedShifts === undefined || worker.allowedShifts === null || worker.allowedShifts.includes(cs.code);
+                                                                    return isAllowedByDay && isAllowedByWorker;
+                                                                }).map(cs => (
                                                                     <option key={cs.id} value={cs.code}>{cs.name} ({cs.code})</option>
                                                                 ))}
                                                             </select>
@@ -390,22 +611,46 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold uppercase text-[var(--text-secondary)] block mb-1">Duración</label>
-                                    <select value={rotationDuration} onChange={(e) => setRotationDuration(parseInt(e.target.value))} className="glass-input w-full p-2 text-sm outline-none">
-                                        <option value={1}>1 Mes</option>
-                                        <option value={3}>3 Meses</option>
-                                        <option value={6}>6 Meses</option>
-                                        <option value={12}>1 Año</option>
-                                    </select>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="365"
+                                            value={rotationDuration}
+                                            onChange={(e) => setRotationDuration(parseInt(e.target.value) || 1)}
+                                            className="glass-input w-20 p-2 text-sm text-center"
+                                        />
+                                        <select
+                                            value={rotationDurationUnit}
+                                            onChange={(e) => setRotationDurationUnit(e.target.value)}
+                                            className="glass-input flex-1 p-2 text-sm outline-none"
+                                        >
+                                            <option value="days">Días</option>
+                                            <option value="weeks">Semanas</option>
+                                            <option value="months">Meses</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
 
                             {/* 3. Actions */}
-                            <div className="flex flex-col gap-2 pt-4 border-t border-[var(--glass-border)]">
-                                <Button onClick={applyRotation} variant="primary" icon={RefreshCw} className="w-full justify-center">Aplicar Rotación</Button>
+                            <div className="flex flex-col gap-3 pt-4 border-t border-[var(--glass-border)]">
+                                <Button onClick={applyRotation} variant="primary" icon={RefreshCw} className="w-full justify-center">Aplicar Rotación Completa</Button>
+
+                                <button
+                                    onClick={handleGenerateRandomRests}
+                                    className="w-full py-3 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-dock)] text-[var(--text-primary)] text-xs font-bold hover:bg-[var(--glass-border)] transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <Dices size={16} className="text-purple-400" /> 🎲 Generar Solo Descansos
+                                </button>
+                                <p className="text-[10px] text-center text-[var(--text-tertiary)] -mt-1 mb-2">
+                                    Genera días libres aleatorios y deja el resto sin asignar.
+                                </p>
+
                                 <button onClick={handleClearPeriod} className="w-full py-3 rounded-xl border border-red-500/30 text-red-500 text-xs font-bold hover:bg-red-500/10 transition-colors flex items-center justify-center gap-2">
                                     <Trash2 size={14} /> Limpiar Periodo (Reset)
                                 </button>
-                                <p className="text-[10px] text-center text-[var(--text-tertiary)] mt-1">
+                                <p className="text-[10px] text-center text-[var(--text-tertiary)] -mt-1">
                                     "Limpiar Periodo" borrará todos los turnos del rango seleccionado.
                                 </p>
                             </div>
@@ -444,6 +689,31 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
                         })}
                     </div>
                 </div>
+
+                {/* --- SHIFT PERMISSIONS --- */}
+                {!readOnly && settings.customShifts && settings.customShifts.length > 0 && (
+                    <div className="glass-panel rounded-2xl p-5 border border-[var(--glass-border)]">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-4 flex items-center gap-2"><Layers size={14} /> Permisos de Turnos</h3>
+                        <p className="text-xs text-[var(--text-tertiary)] mb-4">Selecciona los turnos que este trabajador puede realizar. Si todos están marcados, tiene acceso a todos. Si ninguno está marcado, no podrá ser asignado a turnos personalizados.</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {settings.customShifts.map(shift => {
+                                // CORRECCIÓN: La casilla está marcada si el estado es "todos" (undefined) o si el código está en el array.
+                                const isAllowed = worker.allowedShifts === undefined || worker.allowedShifts === null || worker.allowedShifts.includes(shift.code);
+                                return (
+                                    <label key={shift.id} className="flex items-center gap-2 p-2 rounded-lg bg-[var(--glass-dock)] border border-[var(--glass-border)] cursor-pointer hover:bg-[var(--glass-border)] transition-colors">
+                                        <input
+                                            type="checkbox"
+                                            checked={isAllowed}
+                                            onChange={(e) => handleAllowedShiftsChange(shift.code, e.target.checked)}
+                                            className="w-4 h-4 rounded text-[var(--accent-solid)] bg-[var(--bg-body)] border-[var(--glass-border)] focus:ring-[var(--accent-solid)]"
+                                        />
+                                        <span className="text-sm font-medium text-[var(--text-primary)]">{shift.name} <span className="text-xs text-[var(--text-tertiary)]">({shift.code})</span></span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
 
                 {/* Bitácora / Notas */}
                 <div>

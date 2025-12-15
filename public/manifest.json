@@ -3,7 +3,7 @@
     "short_name": "Turnos",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#ffffff",
+    "background_color": "#1d1d1f",
     "theme_color": "#000000",
     "description": "Sistema de gestión de turnos de trabajo",
     "icons": [

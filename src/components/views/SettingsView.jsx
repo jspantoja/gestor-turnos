@@ -152,8 +152,8 @@ const SettingsView = ({ settings, updateSettings, logout }) => {
                     </div>
 
                     {/* Custom Shifts Section */}
-                    <div className="mb-8">
-                        <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-4 flex items-center gap-2"><Repeat size={14} /> Tipos de Turno</h3>
+                    <div className="mb-8 mt-12 border-t border-[var(--glass-border)] pt-8">
+                        <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-4 flex items-center gap-2"><Repeat size={14} /> Gestor de Turnos</h3>
                         <div className="glass-panel p-5 rounded-2xl">
                             <p className="text-xs text-[var(--text-tertiary)] mb-4">Define los turnos con sus horarios y códigos para asignarlos en el calendario.</p>
 
@@ -228,8 +228,32 @@ const SettingsView = ({ settings, updateSettings, logout }) => {
                                                 </div>
                                             </div>
 
+                                            {/* Days Selector */}
+                                            <div className="flex gap-1 mt-2 pt-2 border-t border-[var(--glass-border)] border-dashed">
+                                                <span className="text-[9px] font-bold text-[var(--text-tertiary)] uppercase flex items-center mr-2">Días Hábiles:</span>
+                                                {['D', 'L', 'M', 'X', 'J', 'V', 'S'].map((d, i) => {
+                                                    const isAllowed = !shift.allowedDays || shift.allowedDays.includes(i);
+                                                    return (
+                                                        <button
+                                                            key={i}
+                                                            onClick={() => {
+                                                                const current = shift.allowedDays || [0, 1, 2, 3, 4, 5, 6];
+                                                                const next = current.includes(i) ? current.filter(x => x !== i) : [...current, i];
+                                                                updateSettings({
+                                                                    customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, allowedDays: next } : s)
+                                                                });
+                                                            }}
+                                                            className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold transition-all border ${isAllowed ? 'bg-[var(--text-primary)] text-[var(--bg-body)] border-transparent' : 'bg-transparent text-[var(--text-tertiary)] border-[var(--glass-border)] opacity-50'}`}
+                                                            title={`Habilitar para ${d}`}
+                                                        >
+                                                            {d}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
                                             {expandedColorPickerShiftId === shift.id && (
-                                                <div className="p-3 bg-[var(--glass-dock)] rounded-xl grid grid-cols-5 sm:grid-cols-10 gap-2 animate-in fade-in slide-in-from-top-2">
+                                                <div className="p-3 bg-[var(--glass-dock)] rounded-xl grid grid-cols-5 sm:grid-cols-10 gap-2 animate-in fade-in slide-in-from-top-2 mt-2">
                                                     {SHIFT_COLORS.map(c => (
                                                         <button
                                                             key={c.id}

@@ -46,11 +46,29 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
             }
         }
 
+        // Check for Reliever Conflict (Exceptional Case)
+        let skipAutoReliever = false;
+        if (s.type === 'off' && !worker.isReliever) {
+            const reliever = workers.find(w => w.isReliever && w.isActive !== false);
+            if (reliever) {
+                const relieverShift = getShift(shifts, reliever.id, selectedCell.dateStr);
+                // If Reliever is OFF or RESTING
+                if (relieverShift.type === 'off') {
+                    if (window.confirm("El Relevo (Supernumerario) también está descansando este día.\n\n¿Deseas continuar? Esto dejará a AMBOS en descanso (sin cobertura).")) {
+                        skipAutoReliever = true;
+                    } else {
+                        return; // Cancel action
+                    }
+                }
+            }
+        }
+
         setShifts(prev => {
             const newShifts = { ...prev, [`${selectedCell.workerId}_${selectedCell.dateStr}`]: s };
 
             // --- LÓGICA INTELIGENTE DE RELEVO ---
-            if (s.type === 'off' && !worker.isReliever) {
+            // Solo activar si no estamos en un caso de conflicto aprobado (skipAutoReliever)
+            if (s.type === 'off' && !worker.isReliever && !skipAutoReliever) {
                 const reliever = workers.find(w => w.isReliever && w.isActive !== false);
 
                 if (reliever) {
@@ -60,13 +78,10 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                     let targetType = 'morning';
                     let targetStart = '08:00';
                     let targetEnd = '16:00';
-
-                    // 2. Estrategia A: Usar el turno que estamos reemplazando (si era laboral)
-                    // Ej: Si cambiamos un turno de TARDE por un DESCANSO, el relevo cubre la TARDE.
-                    const workingTypes = ['morning', 'afternoon', 'night', 'custom'];
-
                     let shiftProps = {};
 
+                    // 2. Estrategia A: Usar el turno que estamos reemplazando (si era laboral)
+                    const workingTypes = ['morning', 'afternoon', 'night', 'custom'];
                     if (workingTypes.includes(shift.type)) {
                         targetType = shift.type;
                         targetStart = shift.start;
@@ -81,24 +96,20 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                             };
                         }
                     }
-                    // 3. Estrategia B: Si estaba vacío, mirar vecinos (ayer o mañana) para mantener consistencia
+                    // 3. Estrategia B: Si estaba vacío, mirar vecinos
                     else {
                         const checkNeighbor = (offset) => {
                             try {
                                 const d = new Date(selectedCell.dateStr + 'T12:00:00');
                                 d.setDate(d.getDate() + offset);
                                 const dStr = toLocalISOString(d);
-                                const neighbor = prev[`${worker.id}_${dStr}`]; // Miramos el turno del trabajador original
+                                const neighbor = prev[`${worker.id}_${dStr}`];
                                 return neighbor && workingTypes.includes(neighbor.type) ? neighbor.type : null;
                             } catch (e) { return null; }
                         };
-
-                        // Priorizamos mirar ayer, si no mañana
                         const neighborType = checkNeighbor(-1) || checkNeighbor(1);
-
                         if (neighborType) {
                             targetType = neighborType;
-                            // Asignar horas estándar según el tipo detectado
                             if (targetType === 'morning') { targetStart = '08:00'; targetEnd = '16:00'; }
                             else if (targetType === 'afternoon') { targetStart = '14:00'; targetEnd = '22:00'; }
                             else if (targetType === 'night') { targetStart = '22:00'; targetEnd = '06:00'; }
@@ -124,16 +135,77 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
     };
 
     const applyToWeek = () => {
-        const current = new Date(selectedCell.dateStr + 'T12:00:00'); const day = current.getDay() || 7; const monday = new Date(current); monday.setDate(current.getDate() - (day - 1));
-        setShifts(prev => {
-            const next = { ...prev }; const reliever = workers.find(w => w.isReliever);
-            for (let i = 0; i < 7; i++) {
-                const d = new Date(monday); d.setDate(monday.getDate() + i); const dStr = toLocalISOString(d);
-                next[`${selectedCell.workerId}_${dStr}`] = { ...shift, place: currentShiftPlace };
+        const current = new Date(selectedCell.dateStr + 'T12:00:00');
+        const day = current.getDay() || 7;
+        const monday = new Date(current);
+        monday.setDate(current.getDate() - (day - 1));
 
-                // Auto-schedule Reliever (Aquí mantenemos 'morning' por defecto ya que se reemplaza toda la semana)
-                // Podríamos mejorarlo, pero generalmente al aplicar a toda la semana se busca un reinicio.
-                if (shift.type === 'off' && reliever) {
+        setShifts(prev => {
+            const next = { ...prev };
+            const reliever = workers.find(w => w.isReliever);
+
+            // Helper for comparisons
+            const timeToMin = (t) => {
+                if (!t) return 0;
+                const [h, m] = t.split(':').map(Number);
+                return h * 60 + m;
+            };
+
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(monday);
+                d.setDate(monday.getDate() + i);
+                const dStr = toLocalISOString(d);
+                const dayIndex = d.getDay(); // 0-6
+
+                // --- SMART SHIFT SELECTION ---
+                let targetShift = { ...shift, place: currentShiftPlace };
+
+                // If applying a Custom Shift, validate restrictions
+                if (shift.type === 'custom') {
+                    const originalDef = settings.customShifts.find(cs => cs.code === shift.code);
+                    // If original is restricted on this day
+                    if (originalDef && originalDef.allowedDays && !originalDef.allowedDays.includes(dayIndex)) {
+
+                        // Try to find substitute
+                        const sourceStart = timeToMin(shift.start);
+                        const bestMatch = settings.customShifts.find(cs => {
+                            if (cs.allowedDays && !cs.allowedDays.includes(dayIndex)) return false;
+                            const cStart = timeToMin(cs.start);
+                            return Math.abs(cStart - sourceStart) < 30; // 30 min tolerance
+                        });
+
+                        if (bestMatch) {
+                            targetShift = {
+                                type: 'custom',
+                                code: bestMatch.code,
+                                start: bestMatch.start,
+                                end: bestMatch.end,
+                                customShiftId: bestMatch.id,
+                                customShiftName: bestMatch.name,
+                                customShiftIcon: bestMatch.icon,
+                                customShiftColor: bestMatch.color,
+                                place: currentShiftPlace
+                            };
+                        } else {
+                            // Fallback to Standard
+                            let stdType = 'morning';
+                            if (sourceStart >= 720 && sourceStart < 1080) stdType = 'afternoon';
+                            else if (sourceStart >= 1080 || sourceStart < 360) stdType = 'night';
+
+                            targetShift = {
+                                type: stdType,
+                                start: shift.start,
+                                end: shift.end,
+                                place: currentShiftPlace
+                            };
+                        }
+                    }
+                }
+
+                next[`${selectedCell.workerId}_${dStr}`] = targetShift;
+
+                // Auto-schedule Reliever
+                if (targetShift.type === 'off' && reliever) {
                     next[`${reliever.id}_${dStr}`] = {
                         type: 'morning',
                         start: '08:00',
@@ -145,7 +217,7 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
             }
             return next;
         });
-        toast.success('Turno aplicado a toda la semana');
+        toast.success('Turno aplicado a toda la semana (con validación inteligente)');
         setSelectedCell(null);
     };
 
@@ -192,39 +264,48 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                         <div className="mb-6">
                             <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase mb-2">Turnos Programados</p>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                {settings.customShifts.map((cs) => {
-                                    const shiftIcon = SHIFT_ICONS.find(i => i.id === cs.icon);
-                                    const IconComp = shiftIcon ? shiftIcon.component : SHIFT_ICONS[0].component;
-                                    return (
-                                        <button
-                                            key={cs.id}
-                                            title={`${cs.name} (${cs.start} - ${cs.end}) - Código: ${cs.code}`}
-                                            onClick={() => update({
-                                                type: 'custom',
-                                                code: cs.code,
-                                                start: cs.start,
-                                                end: cs.end,
-                                                customShiftId: cs.id,
-                                                customShiftName: cs.name,
-                                                customShiftIcon: cs.icon,
-                                                customShiftColor: cs.color,
-                                                place: currentShiftPlace,
-                                                displayLocation: shift.displayLocation
-                                            })}
-                                            className={`p-3 rounded-xl flex items-center gap-2 border transition-all ${shift.type === 'custom' && shift.code === cs.code ? 'shift-btn-active ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
-                                            style={{ borderLeftWidth: '4px', borderLeftColor: cs.colorHex || 'var(--glass-border)' }}
-                                        >
-                                            <div className="p-1.5 rounded-lg" style={{ backgroundColor: cs.colorHex ? `${cs.colorHex}20` : 'var(--accent-solid)/10', color: cs.colorHex || 'var(--accent-solid)' }}>
-                                                <IconComp size={18} />
-                                            </div>
-                                            <div className="text-left flex-1 min-w-0">
-                                                <div className="text-xs font-bold truncate">{cs.name}</div>
-                                                <div className="text-[9px] text-[var(--text-tertiary)]">{cs.start} - {cs.end}</div>
-                                            </div>
-                                            <span className="text-sm font-mono font-bold" style={{ color: cs.colorHex || 'var(--accent-solid)' }}>{cs.code}</span>
-                                        </button>
-                                    );
-                                })}
+                                {settings.customShifts
+                                    .filter(cs => {
+                                        // Filter by allowed days if defined
+                                        const dayOfWeek = date.getDay(); // 0 (Sun) to 6 (Sat)
+                                        const isAllowedByDay = !cs.allowedDays || cs.allowedDays.includes(dayOfWeek);
+                                        // Filter by worker permissions
+                                        const isAllowedByWorker = !worker.allowedShifts || worker.allowedShifts.length === 0 || worker.allowedShifts.includes(cs.code);
+                                        return isAllowedByDay && isAllowedByWorker;
+                                    })
+                                    .map((cs) => {
+                                        const shiftIcon = SHIFT_ICONS.find(i => i.id === cs.icon);
+                                        const IconComp = shiftIcon ? shiftIcon.component : SHIFT_ICONS[0].component;
+                                        return (
+                                            <button
+                                                key={cs.id}
+                                                title={`${cs.name} (${cs.start} - ${cs.end}) - Código: ${cs.code}`}
+                                                onClick={() => update({
+                                                    type: 'custom',
+                                                    code: cs.code,
+                                                    start: cs.start,
+                                                    end: cs.end,
+                                                    customShiftId: cs.id,
+                                                    customShiftName: cs.name,
+                                                    customShiftIcon: cs.icon,
+                                                    customShiftColor: cs.color,
+                                                    place: currentShiftPlace,
+                                                    displayLocation: shift.displayLocation
+                                                })}
+                                                className={`p-3 rounded-xl flex items-center gap-2 border transition-all ${shift.type === 'custom' && shift.code === cs.code ? 'shift-btn-active ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
+                                                style={{ borderLeftWidth: '4px', borderLeftColor: cs.colorHex || 'var(--glass-border)' }}
+                                            >
+                                                <div className="p-1.5 rounded-lg" style={{ backgroundColor: cs.colorHex ? `${cs.colorHex}20` : 'var(--accent-solid)/10', color: cs.colorHex || 'var(--accent-solid)' }}>
+                                                    <IconComp size={18} />
+                                                </div>
+                                                <div className="text-left flex-1 min-w-0">
+                                                    <div className="text-xs font-bold truncate">{cs.name}</div>
+                                                    <div className="text-[9px] text-[var(--text-tertiary)]">{cs.start} - {cs.end}</div>
+                                                </div>
+                                                <span className="text-sm font-mono font-bold" style={{ color: cs.colorHex || 'var(--accent-solid)' }}>{cs.code}</span>
+                                            </button>
+                                        );
+                                    })}
                             </div>
                         </div>
                     )}
