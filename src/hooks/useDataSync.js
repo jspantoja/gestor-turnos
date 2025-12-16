@@ -25,20 +25,22 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
     const [isSynced, setIsSynced] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
+    // 🔥 FIX 1: Referencias de control de flujo
     const isRemoteUpdate = useRef(false);
+    const hasCloudSynced = useRef(false); // <--- EL CANDADO DE SEGURIDAD
+
     const [hasInitialLoad, setHasInitialLoad] = useState(false);
 
     // --- EFECTO PRINCIPAL: Cargar Datos y Sincronizar ---
     useEffect(() => {
-        // Si no hay usuario o appId, reseteamos/limpiamos y esperamos
         if (!firebaseReady || !auth || !user || !appId) {
             setIsLoading(false);
             return;
         }
 
-        const prefix = `app_${appId}_`; // Prefijo único por usuario para localStorage
+        const prefix = `app_${appId}_`;
 
-        // 1. Cargar datos locales específicos de este usuario
+        // 1. Cargar datos locales (SOLO PARA MOSTRAR ALGO RÁPIDO, SIN PERMISO DE ESCRITURA)
         const loadLocalData = () => {
             try {
                 const savedWorkers = localStorage.getItem(`${prefix}workers`);
@@ -50,7 +52,7 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
                 const savedSnapshots = localStorage.getItem(`${prefix}payrollSnapshots`);
 
                 if (savedWorkers) setWorkers(JSON.parse(savedWorkers));
-                else setWorkers([]); // Reset si no hay local
+                else setWorkers([]);
 
                 if (savedShifts) setShifts(JSON.parse(savedShifts));
                 else setShifts({});
@@ -79,17 +81,24 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
         const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings_doc', 'main');
         const miscRef = doc(db, 'artifacts', appId, 'public', 'data', 'misc_doc', 'main');
 
+        // 🔥 FIX 2: Función helper para manejar actualizaciones remotas
+        const handleRemoteUpdate = (updateFn) => {
+            isRemoteUpdate.current = true; // Levantamos bandera: "Esto viene de la nube"
+            hasCloudSynced.current = true; // Levantamos bandera: "Ya estamos conectados con la verdad"
+            updateFn();
+            // NOTA: No bajamos la bandera 'isRemoteUpdate' aquí con setTimeout. 
+            // Dejamos que el useEffect de guardado la consuma y la baje.
+        };
+
         const unsubWorkers = onSnapshot(workersRef, (snap) => {
             if (snap.exists()) {
                 const newData = snap.data().list || [];
-                if (newData.length > 0) {
-                    isRemoteUpdate.current = true;
-                    setWorkers(newData);
-                    setTimeout(() => isRemoteUpdate.current = false, 100);
-                }
+                handleRemoteUpdate(() => setWorkers(newData));
             } else {
-                // Si es un usuario nuevo (DB vacía) y no tiene local, iniciamos plantilla
+                // Caso especial: Usuario nuevo virgen.
+                // Si NO hay datos en nube Y NO hay datos en local, damos permiso de escribir.
                 if (!localStorage.getItem(`${prefix}workers`)) {
+                    hasCloudSynced.current = true;
                     const defaultWorkers = [{ id: 1, name: 'Ejemplo Empleado', role: 'Cargo', sede: 'Sede Principal', lugar: 'Lugar', color: '#007AFF', avatar: null, isReliever: false, notes: [] }];
                     setWorkers(defaultWorkers);
                 }
@@ -98,12 +107,7 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
 
         const unsubShifts = onSnapshot(shiftsRef, (snap) => {
             if (snap.exists()) {
-                const newData = snap.data().data || {};
-                if (Object.keys(newData).length > 0) {
-                    isRemoteUpdate.current = true;
-                    setShifts(newData);
-                    setTimeout(() => isRemoteUpdate.current = false, 100);
-                }
+                handleRemoteUpdate(() => setShifts(snap.data().data || {}));
             }
         });
 
@@ -111,22 +115,20 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
             if (snap.exists()) {
                 const newData = snap.data();
                 if (Object.keys(newData).length > 0) {
-                    isRemoteUpdate.current = true;
-                    setSettings(prev => ({ ...prev, ...newData }));
-                    setTimeout(() => isRemoteUpdate.current = false, 100);
+                    handleRemoteUpdate(() => setSettings(prev => ({ ...prev, ...newData })));
                 }
             }
         });
 
         const unsubMisc = onSnapshot(miscRef, (snap) => {
             if (snap.exists()) {
-                isRemoteUpdate.current = true;
-                const d = snap.data();
-                if (d.holidays && d.holidays.length > 0) setHolidays(new Set(d.holidays));
-                if (d.weeklyNotes) setWeeklyNotes(d.weeklyNotes);
-                if (d.weeklyChecklists) setWeeklyChecklists(d.weeklyChecklists);
-                if (d.payrollSnapshots) setPayrollSnapshots(d.payrollSnapshots);
-                setTimeout(() => isRemoteUpdate.current = false, 100);
+                handleRemoteUpdate(() => {
+                    const d = snap.data();
+                    if (d.holidays && d.holidays.length > 0) setHolidays(new Set(d.holidays));
+                    if (d.weeklyNotes) setWeeklyNotes(d.weeklyNotes);
+                    if (d.weeklyChecklists) setWeeklyChecklists(d.weeklyChecklists);
+                    if (d.payrollSnapshots) setPayrollSnapshots(d.payrollSnapshots);
+                });
             }
         });
 
@@ -136,87 +138,77 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
             unsubSettings();
             unsubMisc();
         };
-    }, [user, firebaseReady, appId]); // IMPORTANTE: appId en dependencias
+    }, [user, firebaseReady, appId]);
 
-    // --- AUTOMATIC MIGRATION: Assign colors to legacy custom shifts ---
+    // --- AUTOMATIC MIGRATION ---
     useEffect(() => {
         if (!settings.customShifts || settings.customShifts.length === 0) return;
 
-        // 1. Migrate Definitions
         let settingsChanged = false;
         const newCustomShifts = settings.customShifts.map((shift, index) => {
             if (!shift.color || !shift.colorHex) {
                 settingsChanged = true;
                 const assignedColor = SHIFT_COLORS[index % SHIFT_COLORS.length];
-                return {
-                    ...shift,
-                    color: shift.color || assignedColor.id,
-                    colorHex: shift.colorHex || assignedColor.hex
-                };
+                return { ...shift, color: shift.color || assignedColor.id, colorHex: shift.colorHex || assignedColor.hex };
             }
             return shift;
         });
 
-        // 2. Migrate Assigned Shifts
         let shiftsChanged = false;
         const newShifts = { ...shifts };
-
-        // Build lookup
         const colorMap = {};
-        newCustomShifts.forEach(cs => {
-            if (cs.code) colorMap[cs.code] = cs;
-        });
+        newCustomShifts.forEach(cs => { if (cs.code) colorMap[cs.code] = cs; });
 
         Object.keys(newShifts).forEach(key => {
             const s = newShifts[key];
             if (s.type === 'custom' && !s.customShiftColor && s.code) {
                 const def = colorMap[s.code];
                 if (def) {
-                    newShifts[key] = {
-                        ...s,
-                        customShiftColor: def.color,
-                        // customShiftId: def.id 
-                    };
+                    newShifts[key] = { ...s, customShiftColor: def.color };
                     shiftsChanged = true;
                 }
             }
         });
 
-        if (settingsChanged) {
-            setSettings(prev => ({ ...prev, customShifts: newCustomShifts }));
-        }
-        if (shiftsChanged) {
-            setShifts(newShifts);
-        }
+        if (settingsChanged) setSettings(prev => ({ ...prev, customShifts: newCustomShifts }));
+        if (shiftsChanged) setShifts(newShifts);
 
     }, [settings.customShifts, shifts]);
 
-    // --- SAVE TO FIRESTORE (Debounced) ---
+    // --- SAVE TO FIRESTORE (Helper) ---
     const saveToCloud = async (collection, data) => {
-        // Validación extra: appId debe existir
-        if (!auth.currentUser || isRemoteUpdate.current || !appId) return;
-
-        if (collection === 'workers_doc' && (!data.list || data.list.length === 0)) {
-            console.warn('Prevented saving empty worker list to cloud.');
-            return;
-        }
-
+        if (!auth.currentUser || !appId) return;
+        if (collection === 'workers_doc' && (!data.list || data.list.length === 0)) return;
         try {
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', collection, 'main'), data, { merge: true });
         } catch (e) { console.error("Save error", e); }
     };
 
-    // --- Guardar Datos (Debounce) ---
+    // --- EFECTO DE GUARDADO (EL CEREBRO DE LA OPERACIÓN) ---
     useEffect(() => {
         if (isLoading || !hasInitialLoad || !appId) return;
 
-        // Validamos que no estemos guardando sobre un usuario vacío
-        if (workers.length === 0 && !localStorage.getItem(`app_${appId}_workers`)) return;
+        // 🔥 FIX 3: Detectar origen del cambio
+        // Si la bandera está arriba, significa que el cambio vino de Firebase.
+        // La bajamos y ABORTAMOS el guardado. Así evitamos el efecto rebote.
+        if (isRemoteUpdate.current) {
+            isRemoteUpdate.current = false;
+            return;
+        }
+
+        // 🔥 FIX 4: El Bloqueo de Seguridad
+        // Si todavía no hemos recibido datos de la nube (hasCloudSynced es false),
+        // PROHIBIMOS guardar. Esto evita que los datos viejos del localStorage
+        // sobrescriban los datos nuevos de la nube.
+        if (!hasCloudSynced.current) {
+            // console.log("⏳ Esperando sincronización con la nube antes de permitir guardar...");
+            return;
+        }
 
         const saveData = setTimeout(() => {
             const prefix = `app_${appId}_`;
 
-            // Guardar en LocalStorage (Con prefijo)
+            // LocalStorage: Siempre guardamos aquí (es tu caché personal)
             if (workers.length > 0) localStorage.setItem(`${prefix}workers`, JSON.stringify(workers));
             localStorage.setItem(`${prefix}shifts`, JSON.stringify(shifts));
             localStorage.setItem(`${prefix}settings`, JSON.stringify(settings));
@@ -225,7 +217,7 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
             localStorage.setItem(`${prefix}weeklyChecklists`, JSON.stringify(weeklyChecklists));
             localStorage.setItem(`${prefix}payrollSnapshots`, JSON.stringify(payrollSnapshots));
 
-            // Guardar en Firestore
+            // Firestore: Solo guardamos si pasamos el FIX 3 y el FIX 4
             if (workers.length > 0) saveToCloud('workers_doc', { list: workers });
             saveToCloud('shifts_doc', { data: shifts });
             saveToCloud('settings_doc', settings);
