@@ -1,6 +1,8 @@
 {
     "name": "Gestor de Turnos",
     "short_name": "Turnos",
+    "id": "/?source=pwa",
+    "scope": "/",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#1d1d1f",
