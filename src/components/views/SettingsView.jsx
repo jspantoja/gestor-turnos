@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings, Clipboard, ToggleRight, ToggleLeft, Palette, Zap, Building, PlusCircle, Trash2, X, Repeat, DollarSign, Shield, LogOut, Cloud, Database, Download, Upload, ShieldCheck } from 'lucide-react';
 import SectionHeader from '../shared/SectionHeader';
 import { APP_THEMES, SHIFT_ICONS, SHIFT_COLORS } from '../../config/constants';
@@ -13,6 +13,7 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
     const [expandedColorPickerShiftId, setExpandedColorPickerShiftId] = useState(null);
     const [activeSubTab, setActiveSubTab] = useState('sync');
     const [selectedIconId, setSelectedIconId] = useState('sun');
+    const [newShift, setNewShift] = useState({ code: '', payrollCode: '', name: '', start: '06:00', end: '14:00', icon: 'sun' });
 
     const validateAndUpdate = (updates) => {
         if (updates.payrollConfig) {
@@ -33,6 +34,40 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
     const handleAddPlace = (sedeName) => { const placeName = newLugar[sedeName]?.trim(); if (placeName) { updateSettings({ sedes: settings.sedes.map(s => s.name === sedeName && !s.places.includes(placeName) ? { ...s, places: [...s.places, placeName] } : s) }); setNewLugar({ ...newLugar, [sedeName]: '' }); } };
     const handleRemovePlace = (sedeName, placeName) => { updateSettings({ sedes: settings.sedes.map(s => s.name === sedeName ? { ...s, places: s.places.filter(p => p !== placeName) } : s) }); };
 
+    const handleAddShift = () => {
+        if (!newShift.code || !newShift.name) return;
+        updateSettings({
+            customShifts: [
+                ...(settings.customShifts || []),
+                { id: Date.now().toString(), ...newShift, icon: selectedIconId, color: 'blue', colorHex: '#3b82f6' }
+            ]
+        });
+        setNewShift({ code: '', payrollCode: '', name: '', start: '06:00', end: '14:00', icon: 'sun' });
+        setSelectedIconId('sun');
+        success("¡Turno agregado con éxito!");
+    };
+
+    useEffect(() => {
+        if (activeSubTab !== 'management') return;
+        const lookup = async () => {
+            try {
+                const response = await fetch('/src/data/turnos.json');
+                const data = await response.json();
+                const match = data.find(t => t["Hora Entrada"] === newShift.start && t["Hora Salida"] === newShift.end);
+                if (match) {
+                    setNewShift(prev => ({
+                        ...prev,
+                        code: match.ID.toString(),
+                        name: prev.name === '' || prev.name.includes('Turno') ? `Turno ${match.ID}` : prev.name
+                    }));
+                }
+            } catch (e) {
+                console.error("Error loading turnos.json:", e);
+            }
+        };
+        lookup();
+    }, [newShift.start, newShift.end, activeSubTab]);
+
     const reportCfg = settings.reportConfig || { showHeader: true, showDays: true, showLocation: true, showReliever: false, showShiftSummary: true };
 
     return (
@@ -42,12 +77,7 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                     <SectionHeader icon={Settings}>Configuración</SectionHeader>
                 </div>
                 <div className="flex gap-2 p-1 bg-[var(--glass-dock)] rounded-2xl border border-[var(--glass-border)] overflow-x-auto no-scrollbar">
-                    {[
-                        { id: 'sync', label: 'Nube', icon: Cloud },
-                        { id: 'management', label: 'Gestión', icon: Clipboard },
-                        { id: 'payroll', label: 'Nómina', icon: DollarSign },
-                        { id: 'app', label: 'App', icon: Palette }
-                    ].map(tab => (
+                    {[{ id: 'sync', label: 'Nube', icon: Cloud }, { id: 'management', label: 'Gestión', icon: Clipboard }, { id: 'payroll', label: 'Nómina', icon: DollarSign }, { id: 'app', label: 'App', icon: Palette }].map(tab => (
                         <button key={tab.id} onClick={() => setActiveSubTab(tab.id)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${activeSubTab === tab.id ? 'bg-[var(--accent-solid)] text-[var(--accent-text)] shadow-lg scale-105' : 'text-[var(--text-secondary)] hover:bg-[var(--glass-border)]'}`}>
                             <tab.icon size={14} /> {tab.label}
                         </button>
@@ -56,7 +86,6 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
             </div>
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-32 pt-6">
-                {/* --- TAB: SYNC --- */}
                 {activeSubTab === 'sync' && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><Database size={14} /> Datos y Sincronización</h3>
@@ -95,7 +124,6 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                     </div>
                 )}
 
-                {/* --- TAB: MANAGEMENT --- */}
                 {activeSubTab === 'management' && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-8">
                         <div>
@@ -117,20 +145,16 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                                     <div className="flex gap-1">
                                                         <button onClick={() => setExpandedColorPickerShiftId(expandedColorPickerShiftId === shift.id ? null : shift.id)} className="w-6 h-6 rounded-full border border-[var(--glass-border)]" style={{ backgroundColor: shift.colorHex || '#ccc' }} />
                                                         <button onClick={() => {
-                                                            const newCode = prompt('Código:', shift.code); if (newCode === null) return;
-                                                            const newPayrollCode = prompt('Código Nómina:', shift.payrollCode || ''); if (newPayrollCode === null) return;
-                                                            const newName = prompt('Nombre:', shift.name); if (newName === null) return;
-                                                            const newStart = prompt('Hora entrada (HH:MM):', shift.start); if (newStart === null) return;
-                                                            const newEnd = prompt('Hora salida (HH:MM):', shift.end); if (newEnd === null) return;
-
-                                                            updateSettings({
-                                                                customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, code: newCode.trim() || s.code, payrollCode: newPayrollCode.trim(), name: newName.trim() || s.name, start: newStart || s.start, end: newEnd || s.end } : s)
-                                                            });
+                                                            const nC = prompt('Código:', shift.code); if (nC === null) return;
+                                                            const nPC = prompt('Código Nómina:', shift.payrollCode || ''); if (nPC === null) return;
+                                                            const nN = prompt('Nombre:', shift.name); if (nN === null) return;
+                                                            const nS = prompt('Entrada:', shift.start); if (nS === null) return;
+                                                            const nE = prompt('Salida:', shift.end); if (nE === null) return;
+                                                            updateSettings({ customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, code: nC.trim() || s.code, payrollCode: nPC.trim(), name: nN.trim() || s.name, start: nS || s.start, end: nE || s.end } : s) });
                                                         }} className="p-1.5 text-blue-400 hover:bg-blue-500/10 rounded-lg"><Zap size={14} /></button>
                                                         <button onClick={() => updateSettings({ customShifts: settings.customShifts.filter(s => s.id !== shift.id) })} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg"><Trash2 size={14} /></button>
                                                     </div>
                                                 </div>
-                                                {/* Days Selector */}
                                                 <div className="flex gap-1 pt-2 border-t border-[var(--glass-border)] border-dashed">
                                                     {['D', 'L', 'M', 'X', 'J', 'V', 'S'].map((d, i) => {
                                                         const isAllowed = !shift.allowedDays || shift.allowedDays.includes(i);
@@ -145,9 +169,7 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                                 </div>
                                                 {expandedColorPickerShiftId === shift.id && (
                                                     <div className="pt-2 grid grid-cols-5 gap-2 animate-in fade-in zoom-in-95">
-                                                        {SHIFT_COLORS.map(c => (
-                                                            <button key={c.id} onClick={() => { updateSettings({ customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, color: c.id, colorHex: c.hex } : s) }); setExpandedColorPickerShiftId(null); }} className="w-full aspect-square rounded-lg border-2 border-transparent" style={{ backgroundColor: c.hex }} />
-                                                        ))}
+                                                        {SHIFT_COLORS.map(c => (<button key={c.id} onClick={() => { updateSettings({ customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, color: c.id, colorHex: c.hex } : s) }); setExpandedColorPickerShiftId(null); }} className="w-full aspect-square rounded-lg border-2 border-transparent" style={{ backgroundColor: c.hex }} />))}
                                                     </div>
                                                 )}
                                             </div>
@@ -156,34 +178,22 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                 </div>
                                 <div className="pt-4 border-t border-[var(--glass-border)] space-y-3">
                                     <div className="grid grid-cols-2 gap-2">
-                                        <input id="nC" placeholder="Código (Ej: 278)" className="glass-input p-2.5 text-xs font-mono" />
-                                        <input id="nP" placeholder="Cód. Nómina" className="glass-input p-2.5 text-xs font-mono" />
-                                        <input id="nN" placeholder="Nombre (Ej: Mañana)" className="glass-input p-2.5 text-xs col-span-2" />
-                                        <input id="nS" type="time" defaultValue="06:00" className="glass-input p-2.5 text-xs" />
-                                        <input id="nE" type="time" defaultValue="14:00" className="glass-input p-2.5 text-xs" />
+                                        <input placeholder="Código (Auto)" value={newShift.code} onChange={e => setNewShift({ ...newShift, code: e.target.value })} className="glass-input p-2.5 text-xs font-mono" />
+                                        <input placeholder="Cód. Nómina" value={newShift.payrollCode} onChange={e => setNewShift({ ...newShift, payrollCode: e.target.value })} className="glass-input p-2.5 text-xs font-mono" />
+                                        <input placeholder="Nombre (Ej: Mañana)" value={newShift.name} onChange={e => setNewShift({ ...newShift, name: e.target.value })} className="glass-input p-2.5 text-xs col-span-2" />
+                                        <div className="flex flex-col gap-1"><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase px-1">Entrada</label><input type="time" value={newShift.start} onChange={e => setNewShift({ ...newShift, start: e.target.value })} className="glass-input p-2.5 text-xs" /></div>
+                                        <div className="flex flex-col gap-1"><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase px-1">Salida</label><input type="time" value={newShift.end} onChange={e => setNewShift({ ...newShift, end: e.target.value })} className="glass-input p-2.5 text-xs" /></div>
                                     </div>
                                     <div className="flex flex-wrap gap-2 mb-3">
                                         {SHIFT_ICONS.map(icon => {
                                             const IconComp = icon.component;
-                                            return (
-                                                <button key={icon.id} onClick={() => setSelectedIconId(icon.id)} className={`p-2 rounded-lg border transition-all flex items-center gap-1 ${selectedIconId === icon.id ? 'bg-[var(--accent-solid)] text-white border-transparent' : 'border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-[var(--glass-dock)]'}`}>
-                                                    <IconComp size={14} />
-                                                    <span className="text-[8px] font-bold uppercase">{icon.name}</span>
-                                                </button>
-                                            );
+                                            return (<button key={icon.id} onClick={() => setSelectedIconId(icon.id)} className={`p-2 rounded-lg border transition-all flex items-center gap-1 ${selectedIconId === icon.id ? 'bg-[var(--accent-solid)] text-white border-transparent' : 'border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-[var(--glass-dock)]'}`}><IconComp size={14} /><span className="text-[8px] font-bold uppercase">{icon.name}</span></button>);
                                         })}
                                     </div>
-                                    <button onClick={() => {
-                                        const c = document.getElementById('nC').value.trim(), n = document.getElementById('nN').value.trim(), p = document.getElementById('nP').value.trim();
-                                        if (!c || !n) return;
-                                        updateSettings({ customShifts: [...(settings.customShifts || []), { id: Date.now().toString(), code: c, payrollCode: p, name: n, start: document.getElementById('nS').value, end: document.getElementById('nE').value, icon: selectedIconId, color: 'blue', colorHex: '#3b82f6' }] });
-                                        document.getElementById('nC').value = ''; document.getElementById('nN').value = ''; document.getElementById('nP').value = '';
-                                        setSelectedIconId('sun');
-                                    }} className="w-full bg-[var(--accent-solid)] text-white py-2.5 rounded-xl text-xs font-bold shadow-md hover:opacity-90 transition-opacity flex items-center justify-center gap-2"><PlusCircle size={14} /> AGREGAR TURNO</button>
+                                    <button onClick={handleAddShift} className="w-full bg-[var(--accent-solid)] text-white py-2.5 rounded-xl text-xs font-bold shadow-md hover:opacity-90 transition-opacity flex items-center justify-center gap-2"><PlusCircle size={14} /> AGREGAR TURNO</button>
                                 </div>
                             </div>
                         </div>
-
                         <div>
                             <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><Building size={14} /> Sedes y Lugares</h3>
                             <div className="glass-panel p-5 rounded-2xl">
@@ -201,7 +211,6 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                 </div>
                             </div>
                         </div>
-
                         <div>
                             <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><Zap size={14} /> Automatización</h3>
                             <div className="glass-panel p-5 rounded-2xl flex items-center justify-between">
@@ -212,33 +221,25 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                     </div>
                 )}
 
-                {/* --- TAB: PAYROLL --- */}
                 {activeSubTab === 'payroll' && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-8">
                         <div>
                             <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><DollarSign size={14} /> Configuración de Nómina</h3>
                             <div className="glass-panel p-5 rounded-2xl space-y-6">
                                 <div><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase block mb-1">Tarifa por Hora (COP)</label><input type="number" value={settings.payrollConfig?.hourlyRate || 6000} onChange={e => validateAndUpdate({ payrollConfig: { ...settings.payrollConfig, hourlyRate: parseInt(e.target.value) || 0 } })} className="glass-input p-3 w-full text-center font-mono text-lg shadow-inner" /></div>
-
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 border-t border-[var(--glass-border)]">
                                     {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'holiday'].map(k => (
                                         <div key={k}><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1 font-bold">{k.substring(0, 3)}</label>
                                             <input type="number" step="0.25" value={settings.payrollConfig?.hoursPerWeekday?.[k] || 7} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, hoursPerWeekday: { ...settings.payrollConfig.hoursPerWeekday, [k]: parseFloat(e.target.value) || 0 } } })} className="glass-input p-2 w-full text-center text-xs font-mono" /></div>
                                     ))}
                                 </div>
-
                                 <div className="grid grid-cols-3 gap-3 pt-4 border-t border-[var(--glass-border)]">
-                                    {[
-                                        { id: 'sundaySurcharge', l: 'Dom (%)', d: 75 },
-                                        { id: 'holidaySurcharge', l: 'Fest (%)', d: 75 },
-                                        { id: 'nightSurcharge', l: 'Noct (%)', d: 35 }
-                                    ].map(s => (
+                                    {[{ id: 'sundaySurcharge', l: 'Dom (%)', d: 75 }, { id: 'holidaySurcharge', l: 'Fest (%)', d: 75 }, { id: 'nightSurcharge', l: 'Noct (%)', d: 35 }].map(s => (
                                         <div key={s.id}><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">{s.l}</label>
                                             <input type="number" value={settings.payrollConfig?.[s.id] || s.d} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, [s.id]: parseInt(e.target.value) || 0 } })} className="glass-input p-2 w-full text-center text-xs" /></div>
                                     ))}
                                 </div>
-
-                                <div className="pt-4 border-t border-[var(--glass-border)] space-y-4">
+                                <div className="pt-4 border-t border(--glass-border) space-y-4">
                                     <div className="flex items-center justify-between">
                                         <div><div className="text-sm font-bold">Auxilio de Transporte</div><div className="text-[10px] text-[var(--text-secondary)]">Proporcional a días trabajados</div></div>
                                         <button onClick={() => updateSettings({ payrollConfig: { ...settings.payrollConfig, includeTransportAllowance: !settings.payrollConfig?.includeTransportAllowance } })} className={`text-2xl transition-colors ${settings.payrollConfig?.includeTransportAllowance ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>{settings.payrollConfig?.includeTransportAllowance ? <ToggleRight /> : <ToggleLeft />}</button>
@@ -247,34 +248,17 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                         <input type="number" value={settings.payrollConfig?.transportAllowance || 200000} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, transportAllowance: parseInt(e.target.value) || 0 } })} className="glass-input p-2.5 w-full text-center font-mono text-sm" placeholder="Monto Mensual" />
                                     )}
                                 </div>
-
                                 <div className="pt-4 border-t border-[var(--glass-border)] grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Horas Nocturnas (Turno Noche)</label>
-                                        <input type="number" value={settings.payrollConfig?.nightShiftHours || 6} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, nightShiftHours: parseInt(e.target.value) || 0 } })} className="glass-input p-2 w-full text-center text-xs" />
-                                    </div>
-                                    <div>
-                                        <label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Mensaje en Nómina / Alerta</label>
-                                        <input type="text" value={settings.payrollConfig?.customMessage || ''} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, customMessage: e.target.value } })} className="glass-input p-2 w-full text-xs" placeholder="Ej: Bono..." />
-                                    </div>
+                                    <div><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Horas Nocturnas</label><input type="number" value={settings.payrollConfig?.nightShiftHours || 6} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, nightShiftHours: parseInt(e.target.value) || 0 } })} className="glass-input p-2 w-full text-center text-xs" /></div>
+                                    <div><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Mensaje en Nómina</label><input type="text" value={settings.payrollConfig?.customMessage || ''} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, customMessage: e.target.value } })} className="glass-input p-2 w-full text-xs" placeholder="Ej: Bono..." /></div>
                                 </div>
                             </div>
                         </div>
-
                         <div>
                             <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><Clipboard size={14} /> Personalizar Reporte</h3>
                             <div className="glass-panel p-5 rounded-2xl space-y-4">
-                                {[
-                                    { k: 'showHeader', l: 'Mostrar Encabezado' },
-                                    { k: 'showDays', l: 'Mostrar Días Laborados' },
-                                    { k: 'showLocation', l: 'Mostrar Sedes/Lugares' },
-                                    { k: 'showReliever', l: 'Mostrar Relevos' },
-                                    { k: 'showShiftSummary', l: 'Resumen de Turnos' }
-                                ].map(i => (
-                                    <div key={i.k} className="flex items-center justify-between">
-                                        <span className="text-sm font-medium">{i.l}</span>
-                                        <button onClick={() => updateReportConfig(i.k)} className={`text-2xl transition-colors ${reportCfg[i.k] ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>{reportCfg[i.k] ? <ToggleRight /> : <ToggleLeft />}</button>
-                                    </div>
+                                {[{ k: 'showHeader', l: 'Mostrar Encabezado' }, { k: 'showDays', l: 'Mostrar Días Laborados' }, { k: 'showLocation', l: 'Mostrar Sedes/Lugares' }, { k: 'showReliever', l: 'Mostrar Relevos' }, { k: 'showShiftSummary', l: 'Resumen de Turnos' }].map(i => (
+                                    <div key={i.k} className="flex items-center justify-between"><span className="text-sm font-medium">{i.l}</span><button onClick={() => updateReportConfig(i.k)} className={`text-2xl transition-colors ${reportCfg[i.k] ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>{reportCfg[i.k] ? <ToggleRight /> : <ToggleLeft />}</button></div>
                                 ))}
                             </div>
                         </div>
