@@ -284,7 +284,7 @@ const WorkersList = ({ workers, setWorkers, setSelectedWorkerId, sedes }) => {
                                 onChange={(e) => { setSede(e.target.value); setLugar(''); }}
                                 className="w-full bg-[var(--bg-input)] border border-[var(--glass-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none cursor-pointer"
                             >
-                                {sedes.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                {sedes.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                             </select>
                         </div>
 

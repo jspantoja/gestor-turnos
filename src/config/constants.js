@@ -51,23 +51,18 @@ export const SHIFT_COLORS = [
 // ... resto del archivo igual ...
 export const EMPLOYEE_COLORS = ['#8E8E93', '#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E'];
 // ...
-export const ACCENT_COLORS = [
-    { name: 'Clásico', value: '#000000' },
-    { name: 'Azul', value: '#007AFF' },
-    { name: 'Violeta', value: '#5856D6' },
-    { name: 'Menta', value: '#00C7BE' },
-    { name: 'Naranja', value: '#FF9500' },
-    { name: 'Rosa', value: '#FF2D55' },
-    { name: 'Verde', value: '#34C759' }
+export const APP_THEMES = [
+    { id: 'default', name: 'Original', bg: '#f5f5f7', accent: '#007AFF' },
+    { id: 'lavender', name: 'Lavanda', bg: '#E6E6FA', accent: '#5856D6' },
+    { id: 'mint', name: 'Menta', bg: '#E0F2F1', accent: '#00C7BE' },
+    { id: 'peach', name: 'Durazno', bg: '#FFE5D9', accent: '#FF9500' },
+    { id: 'rose', name: 'Rosa', bg: '#FFE4E1', accent: '#FF2D55' },
+    { id: 'sky', name: 'Cielo', bg: '#E3F2FD', accent: '#0284c7' },
+    { id: 'forest', name: 'Bosque', bg: '#E8F5E9', accent: '#16a34a' },
+    { id: 'ocean', name: 'Océano', bg: '#E0F2FE', accent: '#0891b2' },
+    { id: 'amber', name: 'Dorado', bg: '#FEF3C7', accent: '#d97706' },
+    { id: 'purple', name: 'Uva', bg: '#F5F3FF', accent: '#7c3aed' },
+    { id: 'stone', name: 'Piedra', bg: '#F1F5F9', accent: '#475569' },
+    { id: 'coral', name: 'Coral', bg: '#FFE7E0', accent: '#E53E3E' }
 ];
 
-export const BACKGROUND_COLORS = [
-    { name: 'Predeterminado', value: '#f5f5f7' },
-    { name: 'Lavanda', value: '#E6E6FA' },
-    { name: 'Menta', value: '#E0F2F1' },
-    { name: 'Durazno', value: '#FFE5D9' },
-    { name: 'Rosa', value: '#FFE4E1' },
-    { name: 'Cielo', value: '#E3F2FD' },
-    { name: 'Limón', value: '#FFFACD' },
-    { name: 'Coral', value: '#FFE7E0' }
-];

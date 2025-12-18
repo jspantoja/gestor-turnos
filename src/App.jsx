@@ -11,7 +11,7 @@ import LockScreen from './components/views/LockScreen';
 import WorkerProfile from './components/views/WorkerProfile';
 import LoginView from './components/views/LoginView';
 import { SkeletonPage } from './components/shared/Skeleton';
-import { ToastProvider } from './components/shared/Toast';
+import { ToastProvider, useToast } from './components/shared/Toast';
 
 // --- CUSTOM HOOKS ---
 import { useAuth } from './hooks/useAuth';
@@ -23,24 +23,24 @@ import ErrorBoundary from './components/shared/ErrorBoundary';
 const RestDaysView = lazy(() => import('./components/views/RestDaysView'));
 const PayrollReportView = lazy(() => import('./components/views/PayrollReportView'));
 const SettingsView = lazy(() => import('./components/views/SettingsView'));
+const CloudConflictModal = lazy(() => import('./components/modals/CloudConflictModal'));
 
 // --- App Principal ---
 const App = () => {
+    const { success, error, warning, info } = useToast();
     const [theme, setTheme] = useState('light');
     const [activeTab, setActiveTab] = useState('schedule');
     const [selectedCell, setSelectedCell] = useState(null);
     const [selectedWorkerId, setSelectedWorkerId] = useState(null);
     const [selectedDayDetail, setSelectedDayDetail] = useState(null);
 
-    // --- Auth & Data Hooks ---
-    // 1. Extraemos todo MENOS appId, para evitar confusiones
-    const { user, auth, db, firebaseReady, login, register, logout, authError, isLoading: authLoading } = useAuth();
+    // --- NUEVO: Estado para Resolución de Conflictos ---
+    const [showConflictModal, setShowConflictModal] = useState(false);
 
-    // 2. Definimos el appId dinámico basado en el usuario logueado
-    // Si no hay usuario, el appId es null y el hook de datos se pausará
+    // --- Auth & Data Hooks ---
+    const { user, auth, db, firebaseReady, login, register, logout, authError, isLoading: authLoading } = useAuth();
     const dynamicAppId = user ? user.uid : null;
 
-    // Only sync data if user is logged in
     const {
         settings, updateSettings,
         holidays, setHolidays,
@@ -49,8 +49,10 @@ const App = () => {
         weeklyNotes, setWeeklyNotes,
         weeklyChecklists, setWeeklyChecklists,
         payrollSnapshots, setPayrollSnapshots,
-        isSynced, isLoading: dataLoading
-    } = useDataSync({ user, auth, db, appId: dynamicAppId, firebaseReady }); // <--- USAMOS dynamicAppId
+        isSynced, isLoading: dataLoading,
+        forceCloudUpload, forceCloudDownload, exportData, importData
+    } = useDataSync({ user, auth, db, appId: dynamicAppId, firebaseReady });
+
     // --- Schedule Hook ---
     const {
         viewMode, setViewMode,
@@ -85,6 +87,38 @@ const App = () => {
 
     const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
+    // --- HANDLERS PARA SINCRONIZACIÓN ---
+    const handleToggleCloud = async (enabled) => {
+        if (enabled) {
+            setShowConflictModal(true);
+        } else {
+            updateSettings({ cloudMode: false });
+        }
+    };
+
+    const handleUploadLocal = async () => {
+        const ok = await forceCloudUpload();
+        if (ok) {
+            updateSettings({ cloudMode: true });
+            setShowConflictModal(false);
+            success("¡Datos locales subidos a la nube con éxito!");
+        } else {
+            error("Error al intentar subir datos. Revisa tu conexión.");
+        }
+    };
+
+    const handleDownloadCloud = async () => {
+        if (!confirm("Esto BORRARÁ tus datos locales actuales y usará los de la nube. ¿Estás seguro?")) return;
+        const ok = await forceCloudDownload();
+        if (ok) {
+            updateSettings({ cloudMode: true });
+            setShowConflictModal(false);
+            success("¡Datos de la nube descargados con éxito!");
+        } else {
+            error("Error al intentar descargar datos.");
+        }
+    };
+
     const autoScheduleReliever = (relieverId) => {
         const reliever = workers.find(w => w.id === relieverId);
         if (!reliever) return;
@@ -92,42 +126,24 @@ const App = () => {
         const newShifts = { ...shifts };
         let updatesCount = 0;
 
-        // Iterate through days currently in view
         daysToShow.forEach(dayObj => {
             const dateStr = dayObj.date.toISOString().split('T')[0];
-
-            // Check if reliever is already busy this day
             const relieverShift = newShifts[`${relieverId}_${dateStr}`];
-            if (relieverShift && relieverShift.type !== 'off' && relieverShift.type !== 'unassigned') {
-                return; // Reliever is busy, skip
-            }
+            if (relieverShift && relieverShift.type !== 'off' && relieverShift.type !== 'unassigned') return;
 
-            // Look for absences to cover
             const absentWorker = workers.find(w => {
-                if (w.id === relieverId) return false; // Skip self
+                if (w.id === relieverId) return false;
                 const s = newShifts[`${w.id}_${dateStr}`] || {};
-                // Cover: Sick, Permit, Vacation, Off
                 return ['sick', 'permit', 'vacation', 'off'].includes(s.type);
             });
 
             if (absentWorker) {
-                // Found an absence! Assign reliever.
-                // We default to a standard shift based on the absence, or just a generic 'Morning' if unknown, 
-                // but usually the reliever takes the *place* of the worker. 
-                // However, the absent worker's shift *type* is now 'sick', so we don't know what they *would* have worked.
-                // We'll assume a standard Morning shift for coverage or try to infer from pattern if we had it.
-                // For now: Assign 'morning' or 'afternoon' depending on the absent worker's usual preference? 
-                // Let's standardise to Match the Site's need or default to Morning (M).
-
-                // Better: Check what the absent worker *usually* does? No data.
-                // Defaulting to "Morning" (M) for coverage.
-
                 newShifts[`${relieverId}_${dateStr}`] = {
                     type: 'morning',
                     start: '08:00',
                     end: '16:00',
-                    coveringId: absentWorker.id, // Track who they are covering
-                    location: absentWorker.sede // Go to the absent worker's site
+                    coveringId: absentWorker.id,
+                    location: absentWorker.sede
                 };
                 updatesCount++;
             }
@@ -135,25 +151,19 @@ const App = () => {
 
         if (updatesCount > 0) {
             setShifts(newShifts);
-            // Optional: Notify user
             alert(`Se asignaron ${updatesCount} turnos automáticos al relevo.`);
         } else {
             alert("No se encontraron ausencias sin cubrir para los días visibles.");
         }
     };
 
+
     // --- RENDER ---
 
-    // 1. Loading State (Global)
     if (authLoading) {
-        return (
-            <div className="flex h-screen w-screen items-center justify-center bg-black text-white">
-                <Loader className="animate-spin" size={48} />
-            </div>
-        );
+        return <div className="flex h-screen w-screen items-center justify-center bg-black text-white"><Loader className="animate-spin" size={48} /></div>;
     }
 
-    // 2. Public View (No Login Required)
     if (isPublicView) {
         return (
             <>
@@ -162,32 +172,17 @@ const App = () => {
                     <div className="flex flex-col h-full w-full max-w-[1400px] mx-auto relative">
                         <div className="blob-cont"><div className="blob" style={{ top: '-10%', left: '-10%', width: '50vw', height: '50vw', background: 'rgba(120,120,120,0.1)' }} /></div>
                         <div className="flex flex-col h-full">
-                            <div className="bg-blue-500 text-white text-center text-xs font-bold py-1 px-4 shadow-md z-50">
-                                VISTA DE SOLO LECTURA
-                            </div>
+                            <div className="bg-blue-500 text-white text-center text-xs font-bold py-1 px-4 shadow-md z-50">VISTA DE SOLO LECTURA</div>
                             {dataLoading ? (
                                 <div className="flex-1 flex items-center justify-center flex-col gap-4">
-                                    <Loader className="animate-spin text-[var(--accent-solid)]" size={48} />
-                                    <p className="text-[var(--text-secondary)] text-sm font-bold animate-pulse">Cargando bitácora...</p>
+                                    <Loader className="animate-spin text-[var(--accent-solid)]" size={48} /><p className="text-[var(--text-secondary)] text-sm font-bold animate-pulse">Cargando...</p>
                                 </div>
                             ) : workers.find(w => w.id === publicWorkerId) ? (
-                                <WorkerProfile
-                                    worker={workers.find(w => w.id === publicWorkerId)}
-                                    onBack={() => { }}
-                                    setWorkers={() => { }}
-                                    shifts={shifts}
-                                    setShifts={() => { }}
-                                    autoScheduleReliever={() => { }}
-                                    sedes={settings.sedes}
-                                    readOnly={true}
-                                />
+                                <WorkerProfile worker={workers.find(w => w.id === publicWorkerId)} onBack={() => { }} setWorkers={() => { }} shifts={shifts} setShifts={() => { }} autoScheduleReliever={() => { }} sedes={settings.sedes} readOnly={true} />
                             ) : (
                                 <div className="flex-1 flex items-center justify-center flex-col gap-4 text-center px-6">
-                                    <div className="w-20 h-20 rounded-full bg-[var(--glass-dock)] flex items-center justify-center text-[var(--text-tertiary)] mb-2">
-                                        <UserCheck size={40} />
-                                    </div>
+                                    <div className="w-20 h-20 rounded-full bg-[var(--glass-dock)] flex items-center justify-center text-[var(--text-tertiary)] mb-2"><UserCheck size={40} /></div>
                                     <h2 className="text-xl font-bold text-[var(--text-primary)]">Trabajador no encontrado</h2>
-                                    <p className="text-sm text-[var(--text-secondary)]">El enlace podría ser incorrecto o el trabajador ya no existe.</p>
                                 </div>
                             )}
                         </div>
@@ -197,28 +192,18 @@ const App = () => {
         );
     }
 
-    // 3. Login View (If not authenticated)
     if (!user) {
         return (
             <>
                 <GlobalStyles accentColor={settings.accentColor} glassIntensity={settings.glassIntensity} reducedMotion={settings.reducedMotion} settings={settings} />
-                <LoginView
-                    onLogin={login}
-                    onRegister={register}
-                    isLoading={authLoading}
-                    error={authError}
-                />
+                <LoginView onLogin={login} onRegister={register} isLoading={authLoading} error={authError} />
             </>
         );
     }
 
-    // Derived State: Active Workers
     const activeWorkers = workers.filter(w => w.isActive !== false);
-
-    // Check if any modal that should hide the dock is open
     const isModalOpen = !!(selectedCell || selectedDayDetail);
 
-    // 4. Main App (Authenticated)
     return (
         <ToastProvider>
             <GlobalStyles accentColor={settings.accentColor} glassIntensity={settings.glassIntensity} reducedMotion={settings.reducedMotion} settings={settings} />
@@ -226,29 +211,16 @@ const App = () => {
                 <LockScreen onUnlock={() => setIsLocked(false)} correctPin={settings.pin} />
             ) : (
                 <div className="flex flex-col h-screen w-screen overflow-hidden" data-theme={theme}>
-                    {/* Max-width container for large screens */}
                     <div className="flex flex-col h-full w-full max-w-[1400px] mx-auto relative">
                         <div className="blob-cont"><div className="blob" style={{ top: '-10%', left: '-10%', width: '50vw', height: '50vw', background: 'rgba(120,120,120,0.1)' }} /></div>
 
-                        {/* Logout Button (Temporary placement or integrated into UI) */}
-                        {/* We can add a logout button to the Settings view, but for now let's keep it simple */}
-
                         {selectedWorkerId ? (
                             <ErrorBoundary>
-                                <WorkerProfile
-                                    worker={workers.find(w => w.id === selectedWorkerId)}
-                                    onBack={() => setSelectedWorkerId(null)}
-                                    setWorkers={setWorkers}
-                                    shifts={shifts}
-                                    setShifts={setShifts}
-                                    autoScheduleReliever={autoScheduleReliever}
-                                    sedes={settings.sedes}
-                                    settings={settings}
-                                />
+                                <WorkerProfile worker={workers.find(w => w.id === selectedWorkerId)} onBack={() => setSelectedWorkerId(null)} setWorkers={setWorkers} shifts={shifts} setShifts={setShifts} autoScheduleReliever={autoScheduleReliever} sedes={settings.sedes} settings={settings} />
                             </ErrorBoundary>
                         ) : (
                             <ErrorBoundary>
-                                {activeTab === 'schedule' && <ScheduleView theme={theme} toggleTheme={toggleTheme} viewMode={viewMode} setViewMode={setViewMode} currentDate={currentDate} navigate={navigate} daysToShow={daysToShow} workers={workers} shifts={shifts} setSelectedCell={setSelectedCell} setSelectedDayDetail={setSelectedDayDetail} isSynced={isSynced} settings={settings} />}
+                                {activeTab === 'schedule' && <ScheduleView theme={theme} toggleTheme={toggleTheme} viewMode={viewMode} setViewMode={setViewMode} currentDate={currentDate} navigate={navigate} daysToShow={daysToShow} workers={workers} shifts={shifts} setSelectedCell={setSelectedCell} setSelectedDayDetail={setSelectedDayDetail} isSynced={isSynced && settings.cloudMode} settings={settings} />}
                                 {activeTab === 'rest_days' && (
                                     <Suspense fallback={<SkeletonPage />}>
                                         <RestDaysView currentDate={currentDate} setCurrentDate={setCurrentDate} workers={activeWorkers} shifts={shifts} setShifts={setShifts} weeklyNotes={weeklyNotes} setWeeklyNotes={setWeeklyNotes} weeklyChecklists={weeklyChecklists} setWeeklyChecklists={setWeeklyChecklists} settings={settings} />
@@ -256,17 +228,36 @@ const App = () => {
                                 )}
                                 {activeTab === 'report' && (
                                     <Suspense fallback={<SkeletonPage />}>
-                                        <PayrollReportView workers={workers} shifts={shifts} setShifts={setShifts} currentDate={currentDate} holidays={holidays} setHolidays={setHolidays} navigate={navigate} setViewMode={setViewMode} daysToShow={daysToShow} setSelectedCell={setSelectedCell} setCurrentDate={setCurrentDate} settings={settings} weeklyNotes={weeklyNotes} setWeeklyNotes={setWeeklyNotes} payrollSnapshots={payrollSnapshots} />
+                                        <PayrollReportView workers={workers} shifts={shifts} setShifts={setShifts} currentDate={currentDate} holidays={holidays} setHolidays={setHolidays} navigate={navigate} setViewMode={setViewMode} daysToShow={daysToShow} setSelectedCell={setSelectedCell} setCurrentDate={setCurrentDate} settings={settings} weeklyNotes={weeklyNotes} setWeeklyNotes={weeklyNotes} payrollSnapshots={payrollSnapshots} />
                                     </Suspense>
                                 )}
                                 {activeTab === 'workers' && <WorkersList workers={workers} setWorkers={setWorkers} setSelectedWorkerId={setSelectedWorkerId} sedes={settings.sedes} />}
                                 {activeTab === 'settings' && (
                                     <Suspense fallback={<SkeletonPage />}>
-                                        <SettingsView settings={settings} updateSettings={updateSettings} logout={logout} />
+                                        <SettingsView
+                                            user={user}
+                                            settings={settings}
+                                            updateSettings={updateSettings}
+                                            logout={logout}
+                                            onToggleCloud={handleToggleCloud}
+                                            exportData={exportData}
+                                            importData={importData}
+                                        />
                                     </Suspense>
                                 )}
                                 <DayDetailModal dateStr={selectedDayDetail} onClose={() => setSelectedDayDetail(null)} workers={workers} shifts={shifts} settings={settings} />
                                 <EditModal selectedCell={selectedCell} setSelectedCell={setSelectedCell} workers={workers} shifts={shifts} setShifts={setShifts} sedes={settings.sedes} settings={settings} />
+
+                                <Suspense fallback={null}>
+                                    <CloudConflictModal
+                                        isOpen={showConflictModal}
+                                        onClose={() => setShowConflictModal(false)}
+                                        onUpload={handleUploadLocal}
+                                        onDownload={handleDownloadCloud}
+                                        lastSync={settings.lastSync}
+                                    />
+                                </Suspense>
+
                                 <div className={`dock-container ${isModalOpen ? 'dock-hidden' : ''}`}>
                                     <div className="dock-menu">
                                         {[{ id: 'schedule', label: 'Calendario', icon: Calendar }, { id: 'rest_days', label: 'Descansos', icon: Coffee }, { id: 'report', label: 'Nómina', icon: FileText }, { id: 'workers', label: 'Equipo', icon: Users }, { id: 'settings', label: 'Config', icon: Settings }].map(item => (
@@ -283,7 +274,7 @@ const App = () => {
             )}
         </ToastProvider>
     );
-}
+};
 
 
 export default App;
