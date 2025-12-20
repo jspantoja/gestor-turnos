@@ -1,10 +1,48 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { VitePWA } from 'vite-plugin-pwa'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
+import fs from 'fs';
+import path from 'path';
+
+// Custom plugin to bump version
+const versionBumpPlugin = () => {
+  return {
+    name: 'version-bump',
+    buildStart: () => {
+      const packagePath = path.resolve(__dirname, 'package.json');
+      const constantsPath = path.resolve(__dirname, 'src', 'config', 'constants.js');
+
+      // 1. Update package.json
+      const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+      const versionParts = pkg.version.split('.').map(Number);
+      versionParts[2] = (versionParts[2] || 0) + 1;
+      pkg.version = versionParts.join('.');
+      fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
+      console.log(`✅ Version bumped to ${pkg.version} in package.json`);
+
+      // 2. Update constants.js
+      let constantsFileContent = fs.readFileSync(constantsPath, 'utf8');
+      const today = new Date();
+      const buildDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+      constantsFileContent = constantsFileContent.replace(
+        /(export const APP_VERSION = )".*";/,
+        `$1"${pkg.version}";`
+      );
+      constantsFileContent = constantsFileContent.replace(
+        /(export const LAST_UPDATE = )".*";/,
+        `$1"${buildDate}";`
+      );
+      fs.writeFileSync(constantsPath, constantsFileContent, 'utf8');
+      console.log(`✅ Updated APP_VERSION to ${pkg.version} and LAST_UPDATE to ${buildDate} in constants.js`);
+    }
+  };
+};
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    versionBumpPlugin(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',
