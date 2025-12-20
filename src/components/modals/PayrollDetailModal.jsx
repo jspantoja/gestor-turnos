@@ -1,18 +1,24 @@
 import React, { useMemo, useState } from 'react';
 import { X, DollarSign, TrendingUp, User, LayoutGrid, List as ListIcon } from 'lucide-react';
 
-const PayrollDetailModal = ({ workers, shifts, daysToShow, holidays, settings, onClose, calculateWorkerPay }) => {
+import { toLocalISOString } from '../../utils/helpers';
+
+const PayrollDetailModal = ({ workers, shifts, daysToShow, holidays, settings, onClose, calculateWorkerPay, payrollExclusions = {} }) => {
     const [sortBy, setSortBy] = useState('total'); // 'total', 'name', 'sede'
 
+    const periodId = daysToShow.length > 0 ? toLocalISOString(daysToShow[0].date) : '';
+
     const data = useMemo(() => {
-        return workers.map((w) => calculateWorkerPay(w, shifts, daysToShow, holidays, settings))
-            .sort((a, b) => {
-                if (sortBy === 'total') return b.costs.total - a.costs.total;
-                if (sortBy === 'name') return a.name.localeCompare(b.name);
-                if (sortBy === 'sede') return (a.sede || '').localeCompare(b.sede || '');
-                return 0;
-            });
-    }, [workers, shifts, daysToShow, holidays, settings, calculateWorkerPay, sortBy]);
+        return workers.map((w) => {
+            const isExcluded = payrollExclusions[`${w.id}_${periodId}`] || false;
+            return calculateWorkerPay(w, shifts, daysToShow, holidays, settings, { excludeSurcharges: isExcluded });
+        }).sort((a, b) => {
+            if (sortBy === 'total') return b.costs.total - a.costs.total;
+            if (sortBy === 'name') return a.name.localeCompare(b.name);
+            if (sortBy === 'sede') return (a.sede || '').localeCompare(b.sede || '');
+            return 0;
+        });
+    }, [workers, shifts, daysToShow, holidays, settings, calculateWorkerPay, sortBy, payrollExclusions, periodId]);
 
     const totalGrand = data.reduce((acc, curr) => acc + curr.costs.total, 0);
 

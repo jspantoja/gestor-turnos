@@ -46,7 +46,7 @@ const PayrollHistoryModal = ({ onClose, onSelect }) => {
     );
 };
 
-const PayrollCostCalculator = ({ workers, shifts, daysToShow, settings, holidays, weeklyNotes, setWeeklyNotes, currentDate, onOpenDetail }) => {
+const PayrollCostCalculator = ({ workers, shifts, daysToShow, settings, holidays, weeklyNotes, setWeeklyNotes, currentDate, onOpenDetail, payrollExclusions = {} }) => {
     const cfg = settings.payrollConfig || {};
 
     const stats = useMemo(() => {
@@ -63,8 +63,11 @@ const PayrollCostCalculator = ({ workers, shifts, daysToShow, settings, holidays
             totalCost: 0
         };
 
+        const periodId = daysToShow.length > 0 ? toLocalISOString(daysToShow[0].date) : '';
+
         workers.forEach(w => {
-            const pay = calculateWorkerPay(w, shifts, daysToShow, holidays, settings);
+            const isExcluded = payrollExclusions[`${w.id}_${periodId}`] || false;
+            const pay = calculateWorkerPay(w, shifts, daysToShow, holidays, settings, { excludeSurcharges: isExcluded });
             total.programmedHours += pay.programmedHours;
             total.absenceHours += pay.absenceHours;
             total.realHours += pay.realHours;
@@ -327,16 +330,27 @@ const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDat
             daysToShow.forEach(d => {
                 const dateStr = toLocalISOString(d.date);
                 const s = getShift(shifts, w.id, dateStr);
-                // Use shift code if available, -1 for off/vacation/sick/unassigned
-                let code = '-1';
-                if (s.code) {
-                    code = s.code;
+                let code = '-1'; // Default fallback
+
+                if (s.type === 'custom' && s.customShiftId) {
+                    const customShiftDef = (settings.customShifts || []).find(cs => cs.id === s.customShiftId);
+                    if (customShiftDef) {
+                        code = customShiftDef.matrixCode || customShiftDef.code;
+                    } else {
+                        code = s.code; // fallback to code on shift instance
+                    }
                 } else if (s.type === 'morning') {
                     code = 'M';
                 } else if (s.type === 'afternoon') {
                     code = 'T';
                 } else if (s.type === 'night') {
                     code = 'N';
+                } else {
+                    // Look up matrixCode from customStatuses for absences
+                    const statusDef = (settings.customStatuses || []).find(st => st.id === s.type);
+                    if (statusDef && statusDef.matrixCode) {
+                        code = statusDef.matrixCode;
+                    }
                 }
                 csv += `;${code}`;
             });
@@ -352,6 +366,7 @@ const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDat
         link.click();
         document.body.removeChild(link);
     };
+
 
     return (
         <div className="glass-panel p-5 rounded-2xl flex flex-col gap-3 h-full">
@@ -376,20 +391,21 @@ const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDat
                     <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 group-hover:bg-orange-500 group-hover:text-white transition-colors"><Upload size={18} /></div>
                     <div><div className="text-sm font-bold text-[var(--text-primary)]">Restaurar / Importar</div><div className="text-[10px] text-[var(--text-secondary)]">Cargar archivo CSV</div></div>
                 </label>
+                ```
             </div>
         </div>
     );
 };
 
 // --- CORRECCIÓN VISUAL (Componente PayrollRow completo, Línea ~230) ---
-const PayrollRow = ({ worker, daysToShow, shifts, holidays, setSelectedCell, getWorkedStats, settings }) => {
-    const stats = getWorkedStats(worker);
+const PayrollRow = ({ worker, daysToShow, shifts, holidays, setSelectedCell, stats, settings }) => {
     const hoursCfg = settings.payrollConfig?.hoursPerWeekday || {};
     const sunHours = hoursCfg.sunday || 7.33;
     const holHours = hoursCfg.holiday || 7.33;
 
-    const totalSun = stats.sundays * sunHours;
-    const totalHol = stats.holidaysCount * holHours;
+    const totalSun = (stats.sundays || 0) * sunHours;
+    const totalHol = (stats.holidays || 0) * holHours;
+    const totalNight = stats.nightHours || 0;
 
     return (
         <tr className="group transition-colors hover:bg-gray-50/50">
@@ -453,6 +469,12 @@ const PayrollRow = ({ worker, daysToShow, shifts, holidays, setSelectedCell, get
             <td className="text-center font-bold text-sm text-[var(--text-primary)] bg-[var(--glass-dock)] border-b border-[var(--glass-border)]">
                 {totalHol > 0 ? Number(totalHol.toFixed(2)) : '-'}
             </td>
+            <td className="text-center font-bold text-sm text-[var(--text-primary)] bg-[var(--glass-dock)] border-b border-[var(--glass-border)]">
+                {totalNight > 0 ? Number(totalNight.toFixed(2)) : '-'}
+            </td>
+            <td className="text-center font-bold text-sm text-[var(--text-primary)] bg-[var(--glass-dock)] border-b border-[var(--glass-border)]">
+                {stats.surchargeDays > 0 ? stats.surchargeDays : '-'}
+            </td>
         </tr>
     );
 };
@@ -463,7 +485,7 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
     const [scrollState, setScrollState] = useState({ atStart: true, atEnd: false });
     const scrollContainerRef = useRef(null);
 
-    // Filtra a los trabajadores para mostrar solo los activos
+    // Filter workers: Show active workers OR inactive workers that have shifts in the current period
 
 
     // Filter workers: Show active workers OR inactive workers that have shifts in the current period
@@ -473,12 +495,12 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
             // For inactive workers, check if they have any assigned shift in the visible days
             // For Payroll, we might want to be stricter (only if Worked?) 
             // Or consistent with Schedule (if assigned).
+            // But visibility suggests showing the row.
+            // Let's stick to consistent logic: Show if not 'unassigned'.
             return daysToShow.some(d => {
                 const s = getShift(shifts, w.id, toLocalISOString(d.date));
                 // Show if they have a shift type that is not 'unassigned' and not 'off' (unless we want to show Rest Days for archived people?)
                 // Usually for payroll, if they have 'off' it doesn't affect pay unless paid rest?
-                // But visibility suggests showing the row.
-                // Let's stick to consistent logic: Show if not 'unassigned'.
                 return s.type && s.type !== 'unassigned';
             });
         });
@@ -507,32 +529,13 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
 
     const toggleHoliday = (dateStr) => { setHolidays(prev => { const next = new Set(prev); if (next.has(dateStr)) next.delete(dateStr); else next.add(dateStr); return next; }); };
 
-    const getWorkedStats = (worker) => {
-        let sundays = 0, holidaysCount = 0;
-
-        daysToShow.forEach(d => {
-            const dateStr = toLocalISOString(d.date);
-            const isSun = d.date.getDay() === 0;
-            const isHol = holidays.has(dateStr);
-            const shift = getShift(shifts, worker.id, dateStr);
-
-            // VALIDACIÓN ESTRICTA:
-            // 1. Debe existir el objeto shift y tener un tipo.
-            // 2. El tipo NO debe ser descanso, incapacidad, vacaciones o no asignado.
-            const hasType = shift && shift.type;
-            const nonWorkingTypes = ['off', 'sick', 'vacation', 'unassigned'];
-
-            // Solo cuenta si tiene tipo Y no es un tipo improductivo
-            const worked = hasType && !nonWorkingTypes.includes(shift.type);
-
-            if (worked) {
-                if (isSun) sundays++;
-                if (isHol && !isSun) holidaysCount++;
-            }
+    const allWorkerStats = useMemo(() => {
+        const statsMap = new Map();
+        activeWorkers.forEach(w => {
+            statsMap.set(w.id, calculateWorkerPay(w, shifts, daysToShow, holidays, settings).stats);
         });
-
-        return { sundays, holidaysCount };
-    };
+        return statsMap;
+    }, [activeWorkers, shifts, daysToShow, holidays, settings]);
 
     const monthName = currentDate.toLocaleDateString('es-ES', { month: 'long' }).toUpperCase();
     const yearNum = currentDate.getFullYear();
@@ -570,11 +573,11 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
                         style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--glass-border) transparent' }}
                     >
                         <div className="glass-panel rounded-xl overflow-hidden shadow-sm border border-[var(--glass-border)] min-w-max">
-                            <table className="report-table w-full"><thead><tr><th className="report-header-cell report-sticky-col p-3 min-w-[200px] text-left text-xs font-bold text-[var(--text-secondary)] uppercase">Nombres</th>{daysToShow.map(d => { const isSun = d.date.getDay() === 0; const dateStr = toLocalISOString(d.date); const isHol = holidays.has(dateStr); return (<th key={dateStr} className={`report-header-cell text-center p-1 min-w-[40px] cursor-pointer hover:bg-[var(--glass-border)] transition-colors ${(isSun || isHol) ? 'holiday-bg' : ''}`} onClick={() => toggleHoliday(dateStr)}><div className={`text-[10px] font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-secondary)]'}`}>{d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}</div><div className={`text-sm font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-primary)]'}`}>{d.date.getDate()}</div></th>) })}<th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DOM<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">FEST<br />LAB.</th></tr></thead>
+                            <table className="report-table w-full"><thead><tr><th className="report-header-cell report-sticky-col p-3 min-w-[200px] text-left text-xs font-bold text-[var(--text-secondary)] uppercase">Nombres</th>{daysToShow.map(d => { const isSun = d.date.getDay() === 0; const dateStr = toLocalISOString(d.date); const isHol = holidays.has(dateStr); return (<th key={dateStr} className={`report-header-cell text-center p-1 min-w-[40px] cursor-pointer hover:bg-[var(--glass-border)] transition-colors ${(isSun || isHol) ? 'holiday-bg' : ''}`} onClick={() => toggleHoliday(dateStr)}><div className={`text-[10px] font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-secondary)]'}`}>{d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}</div><div className={`text-sm font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-primary)]'}`}>{d.date.getDate()}</div></th>) })}<th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DOM<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">FEST<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">H.<br />NOCT</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DÍAS<br />REC</th></tr></thead>
                                 <tbody>
                                     {Object.entries(groupedWorkers).map(([sedeName, group]) => (
                                         <React.Fragment key={sedeName}>
-                                            <tr><td colSpan={daysToShow.length + 3} className="bg-[var(--glass-border)] p-2 font-bold text-xs uppercase tracking-wider text-[var(--text-secondary)] pl-4">{sedeName}</td></tr>
+                                            <tr><td colSpan={daysToShow.length + 5} className="bg-[var(--glass-border)] p-2 font-bold text-xs uppercase tracking-wider text-[var(--text-secondary)] pl-4">{sedeName}</td></tr>
                                             {group.map(w => (
                                                 <PayrollRow
                                                     key={w.id}
@@ -584,7 +587,7 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
                                                     settings={settings}
                                                     holidays={holidays}
                                                     setSelectedCell={setSelectedCell}
-                                                    getWorkedStats={getWorkedStats}
+                                                    stats={allWorkerStats.get(w.id)}
                                                 />
                                             ))}
                                         </React.Fragment>

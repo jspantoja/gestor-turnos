@@ -7,7 +7,6 @@ import EditModal from './components/modals/EditModal';
 import DayDetailModal from './components/modals/DayDetailModal';
 import ScheduleView from './components/views/ScheduleView';
 import WorkersList from './components/views/WorkersList';
-import LockScreen from './components/views/LockScreen';
 import WorkerProfile from './components/views/WorkerProfile';
 import LoginView from './components/views/LoginView';
 import { SkeletonPage } from './components/shared/Skeleton';
@@ -76,11 +75,6 @@ const App = () => {
         setSelectedCell(null);
         setSelectedDayDetail(null);
     }, [activeTab, isPublicView]);
-
-    // Sync lock state with PIN settings
-    useEffect(() => {
-        setIsLocked(settings.enablePin);
-    }, [settings.enablePin]);
 
     // Theme Effect
     useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
@@ -207,71 +201,67 @@ const App = () => {
     return (
         <ToastProvider>
             <GlobalStyles accentColor={settings.accentColor} glassIntensity={settings.glassIntensity} reducedMotion={settings.reducedMotion} settings={settings} />
-            {isLocked ? (
-                <LockScreen onUnlock={() => setIsLocked(false)} correctPin={settings.pin} />
-            ) : (
-                <div className="flex flex-col h-screen w-screen overflow-hidden" data-theme={theme}>
-                    <div className="flex flex-col h-full w-full max-w-[1400px] mx-auto relative">
-                        <div className="blob-cont"><div className="blob" style={{ top: '-10%', left: '-10%', width: '50vw', height: '50vw', background: 'rgba(120,120,120,0.1)' }} /></div>
+            <div className="flex flex-col h-screen w-screen overflow-hidden" data-theme={theme}>
+                <div className="flex flex-col h-full w-full max-w-[1400px] mx-auto relative">
+                    <div className="blob-cont"><div className="blob" style={{ top: '-10%', left: '-10%', width: '50vw', height: '50vw', background: 'rgba(120,120,120,0.1)' }} /></div>
 
-                        {selectedWorkerId ? (
-                            <ErrorBoundary>
-                                <WorkerProfile worker={workers.find(w => w.id === selectedWorkerId)} onBack={() => setSelectedWorkerId(null)} setWorkers={setWorkers} shifts={shifts} setShifts={setShifts} autoScheduleReliever={autoScheduleReliever} sedes={settings.sedes} settings={settings} />
-                            </ErrorBoundary>
-                        ) : (
-                            <ErrorBoundary>
-                                {activeTab === 'schedule' && <ScheduleView theme={theme} toggleTheme={toggleTheme} viewMode={viewMode} setViewMode={setViewMode} currentDate={currentDate} navigate={navigate} daysToShow={daysToShow} workers={workers} shifts={shifts} setSelectedCell={setSelectedCell} setSelectedDayDetail={setSelectedDayDetail} isSynced={isSynced && settings.cloudMode} settings={settings} />}
-                                {activeTab === 'rest_days' && (
-                                    <Suspense fallback={<SkeletonPage />}>
-                                        <RestDaysView currentDate={currentDate} setCurrentDate={setCurrentDate} workers={activeWorkers} shifts={shifts} setShifts={setShifts} weeklyNotes={weeklyNotes} setWeeklyNotes={setWeeklyNotes} weeklyChecklists={weeklyChecklists} setWeeklyChecklists={setWeeklyChecklists} settings={settings} />
-                                    </Suspense>
-                                )}
-                                {activeTab === 'report' && (
-                                    <Suspense fallback={<SkeletonPage />}>
-                                        <PayrollReportView workers={workers} shifts={shifts} setShifts={setShifts} currentDate={currentDate} holidays={holidays} setHolidays={setHolidays} navigate={navigate} setViewMode={setViewMode} daysToShow={daysToShow} setSelectedCell={setSelectedCell} setCurrentDate={setCurrentDate} settings={settings} weeklyNotes={weeklyNotes} setWeeklyNotes={weeklyNotes} payrollSnapshots={payrollSnapshots} />
-                                    </Suspense>
-                                )}
-                                {activeTab === 'workers' && <WorkersList workers={workers} setWorkers={setWorkers} setSelectedWorkerId={setSelectedWorkerId} sedes={settings.sedes} />}
-                                {activeTab === 'settings' && (
-                                    <Suspense fallback={<SkeletonPage />}>
-                                        <SettingsView
-                                            user={user}
-                                            settings={settings}
-                                            updateSettings={updateSettings}
-                                            logout={logout}
-                                            onToggleCloud={handleToggleCloud}
-                                            exportData={exportData}
-                                            importData={importData}
-                                        />
-                                    </Suspense>
-                                )}
-                                <DayDetailModal dateStr={selectedDayDetail} onClose={() => setSelectedDayDetail(null)} workers={workers} shifts={shifts} settings={settings} />
-                                <EditModal selectedCell={selectedCell} setSelectedCell={setSelectedCell} workers={workers} shifts={shifts} setShifts={setShifts} sedes={settings.sedes} settings={settings} />
-
-                                <Suspense fallback={null}>
-                                    <CloudConflictModal
-                                        isOpen={showConflictModal}
-                                        onClose={() => setShowConflictModal(false)}
-                                        onUpload={handleUploadLocal}
-                                        onDownload={handleDownloadCloud}
-                                        lastSync={settings.lastSync}
+                    {selectedWorkerId ? (
+                        <ErrorBoundary>
+                            <WorkerProfile worker={workers.find(w => w.id === selectedWorkerId)} onBack={() => setSelectedWorkerId(null)} setWorkers={setWorkers} shifts={shifts} setShifts={setShifts} autoScheduleReliever={autoScheduleReliever} sedes={settings.sedes} settings={settings} />
+                        </ErrorBoundary>
+                    ) : (
+                        <ErrorBoundary>
+                            {activeTab === 'schedule' && <ScheduleView theme={theme} toggleTheme={toggleTheme} viewMode={viewMode} setViewMode={setViewMode} currentDate={currentDate} navigate={navigate} daysToShow={daysToShow} workers={workers} shifts={shifts} setSelectedCell={setSelectedCell} setSelectedDayDetail={setSelectedDayDetail} isSynced={isSynced && settings.cloudMode} settings={settings} />}
+                            {activeTab === 'rest_days' && (
+                                <Suspense fallback={<SkeletonPage />}>
+                                    <RestDaysView currentDate={currentDate} setCurrentDate={setCurrentDate} workers={activeWorkers} shifts={shifts} setShifts={setShifts} weeklyNotes={weeklyNotes} setWeeklyNotes={setWeeklyNotes} weeklyChecklists={weeklyChecklists} setWeeklyChecklists={setWeeklyChecklists} settings={settings} />
+                                </Suspense>
+                            )}
+                            {activeTab === 'report' && (
+                                <Suspense fallback={<SkeletonPage />}>
+                                    <PayrollReportView workers={workers} shifts={shifts} setShifts={setShifts} currentDate={currentDate} holidays={holidays} setHolidays={setHolidays} navigate={navigate} setViewMode={setViewMode} daysToShow={daysToShow} setSelectedCell={setSelectedCell} setCurrentDate={setCurrentDate} settings={settings} weeklyNotes={weeklyNotes} setWeeklyNotes={weeklyNotes} payrollSnapshots={payrollSnapshots} />
+                                </Suspense>
+                            )}
+                            {activeTab === 'workers' && <WorkersList workers={workers} setWorkers={setWorkers} setSelectedWorkerId={setSelectedWorkerId} sedes={settings.sedes} />}
+                            {activeTab === 'settings' && (
+                                <Suspense fallback={<SkeletonPage />}>
+                                    <SettingsView
+                                        user={user}
+                                        settings={settings}
+                                        updateSettings={updateSettings}
+                                        logout={logout}
+                                        onToggleCloud={handleToggleCloud}
+                                        exportData={exportData}
+                                        importData={importData}
                                     />
                                 </Suspense>
+                            )}
+                            <DayDetailModal dateStr={selectedDayDetail} onClose={() => setSelectedDayDetail(null)} workers={workers} shifts={shifts} settings={settings} />
+                            <EditModal selectedCell={selectedCell} setSelectedCell={setSelectedCell} workers={workers} shifts={shifts} setShifts={setShifts} sedes={settings.sedes} settings={settings} />
 
-                                <div className={`dock-container ${isModalOpen ? 'dock-hidden' : ''}`}>
-                                    <div className="dock-menu">
-                                        {[{ id: 'schedule', label: 'Calendario', icon: Calendar }, { id: 'rest_days', label: 'Descansos', icon: Coffee }, { id: 'report', label: 'Nómina', icon: FileText }, { id: 'workers', label: 'Equipo', icon: Users }, { id: 'settings', label: 'Config', icon: Settings }].map(item => (
-                                            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`dock-button ${activeTab === item.id ? 'active' : ''}`} title={item.label}>
-                                                <item.icon size={24} strokeWidth={2.5} className="dock-icon" />
-                                            </button>
-                                        ))}
-                                    </div>
+                            <Suspense fallback={null}>
+                                <CloudConflictModal
+                                    isOpen={showConflictModal}
+                                    onClose={() => setShowConflictModal(false)}
+                                    onUpload={handleUploadLocal}
+                                    onDownload={handleDownloadCloud}
+                                    lastSync={settings.lastSync}
+                                />
+                            </Suspense>
+
+                            <div className={`dock-container ${isModalOpen ? 'dock-hidden' : ''}`}>
+                                <div className="dock-menu">
+                                    {[{ id: 'schedule', label: 'Calendario', icon: Calendar }, { id: 'rest_days', label: 'Descansos', icon: Coffee }, { id: 'report', label: 'Nómina', icon: FileText }, { id: 'workers', label: 'Equipo', icon: Users }, { id: 'settings', label: 'Config', icon: Settings }].map(item => (
+                                        <button key={item.id} onClick={() => setActiveTab(item.id)} className={`dock-button ${activeTab === item.id ? 'active' : ''}`} title={item.label}>
+                                            <item.icon size={24} strokeWidth={2.5} className="dock-icon" />
+                                        </button>
+                                    ))}
                                 </div>
-                            </ErrorBoundary>
-                        )}
-                    </div>
+                            </div>
+                        </ErrorBoundary>
+                    )}
                 </div>
-            )}
+            </div>
         </ToastProvider>
     );
 };

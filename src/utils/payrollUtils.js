@@ -1,6 +1,54 @@
 import { toLocalISOString, getShift } from './helpers';
 
-export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, settings) => {
+// Helper to calculate overlap between two time ranges
+// All times are in minutes from 00:00
+const calculateSimpleNightHours = (shiftStartStr, shiftEndStr, nightStartStr, nightEndStr) => {
+    if (!shiftStartStr || !shiftEndStr) return 0;
+
+    const toMinutes = (str) => {
+        const [h, m] = str.split(':').map(Number);
+        return h * 60 + m;
+    };
+
+    const nightStart = toMinutes(nightStartStr || '21:00');
+    const nightEnd = toMinutes(nightEndStr || '06:00');
+
+    let shiftStart = toMinutes(shiftStartStr);
+    let shiftEnd = toMinutes(shiftEndStr);
+
+    // Handle crossing midnight for shift
+    if (shiftEnd < shiftStart) shiftEnd += 24 * 60;
+
+    // We need to check overlap against night window.
+    // Night window usually crosses midnight (e.g. 21:00 to 06:00 next day)
+    // Let's normalize to a 48h timeline to handle overlaps easily
+
+    let nightWindows = [];
+
+    // Window 1: Previous day night end (00:00 to nightEnd)
+    if (nightEnd > 0) nightWindows.push({ start: 0, end: nightEnd });
+
+    // Window 2: Today's night start (nightStart to 24:00)
+    if (nightStart < 24 * 60) nightWindows.push({ start: nightStart, end: 24 * 60 });
+
+    // Window 3: Next day (24:00 + 00:00 to 24:00 + nightEnd)
+    if (nightEnd > 0) nightWindows.push({ start: 24 * 60, end: 24 * 60 + nightEnd });
+
+    let totalOverlap = 0;
+
+    nightWindows.forEach(win => {
+        const start = Math.max(shiftStart, win.start);
+        const end = Math.min(shiftEnd, win.end);
+        if (end > start) {
+            totalOverlap += (end - start);
+        }
+    });
+
+    // Convert back to hours
+    return totalOverlap / 60;
+};
+
+export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, settings, options = {}) => {
     const cfg = settings.payrollConfig || {};
     const hourlyRate = cfg.hourlyRate || 6000;
     const hoursPerWeekday = cfg.hoursPerWeekday || { monday: 7, tuesday: 7.5, wednesday: 7.5, thursday: 7.5, friday: 7.5, saturday: 7, sunday: 7.33 };
@@ -14,7 +62,11 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
     let absenceHours = 0;
     let sundaysCount = 0;
     let holidaysCount = 0;
-    let nightShiftsCount = 0;
+
+    // New metrics
+    let totalNightHours = 0;
+    let surchargeDaysCount = 0;
+
     let daysWorkedCount = 0;
     let wDaysForTransport = 0;
 
@@ -33,9 +85,31 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
                 absenceHours += hours;
             } else {
                 daysWorkedCount++;
-                if (isSunday) sundaysCount++;
-                if (isHoliday && !isSunday) holidaysCount++;
-                if (s.type === 'night') nightShiftsCount++;
+
+                // Exclude Surcharges Check (Per Shift)
+                const isExcluded = s.excludeSurcharges === true;
+
+                if (isSunday && !isExcluded) sundaysCount++;
+                if (isHoliday && !isSunday && !isExcluded) holidaysCount++;
+
+                // Calculate Night Hours for this specific shift
+                let sStart = s.start;
+                let sEnd = s.end;
+
+                // Fallback for standard types if no specific time set
+                if (!sStart || !sEnd) {
+                    if (s.type === 'morning') { sStart = '06:00'; sEnd = '14:00'; }
+                    else if (s.type === 'afternoon') { sStart = '14:00'; sEnd = '22:00'; }
+                    else if (s.type === 'night') { sStart = '22:00'; sEnd = '06:00'; }
+                }
+
+                if (sStart && sEnd && !isExcluded) {
+                    const nHours = calculateSimpleNightHours(sStart, sEnd, cfg.nightSurchargeStart, cfg.nightSurchargeEnd);
+                    if (nHours > 0) {
+                        totalNightHours += nHours;
+                        surchargeDaysCount++;
+                    }
+                }
             }
         }
 
@@ -46,7 +120,6 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
     });
 
     const realHours = programmedHours - absenceHours;
-    const nightHours = nightShiftsCount * (cfg.nightShiftHours || 6);
 
     // Cost Calculations
     const baseSalary = Math.round(realHours * hourlyRate);
@@ -59,7 +132,7 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
     const avgDailyHours = 7.5; // From original logic
     const holidayCost = Math.round(holidaysCount * avgDailyHours * hourlyRate * ((cfg.holidaySurcharge || 75) / 100));
 
-    const nightCost = Math.round(nightHours * hourlyRate * ((cfg.nightSurcharge || 35) / 100));
+    const nightCost = Math.round(totalNightHours * hourlyRate * ((cfg.nightSurcharge || 35) / 100));
     const totalSurcharges = sundayCost + holidayCost + nightCost;
 
     // Transport Allowance
@@ -82,7 +155,8 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
         stats: {
             sundays: sundaysCount,
             holidays: holidaysCount,
-            nightHours: nightHours
+            nightHours: totalNightHours,
+            surchargeDays: surchargeDaysCount
         },
         costs: {
             baseSalary,

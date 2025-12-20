@@ -1,9 +1,9 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { ArrowLeft, Camera, CheckSquare, Share2, Building, MapPin, Briefcase, Calendar, ChevronLeft, ChevronRight, FileText, Plus, X, Image, MessageSquare, Check, Trash2, StickyNote, AlertCircle, RefreshCw, Layers, Sparkles, Dices } from 'lucide-react';
-import { EMPLOYEE_COLORS, SHIFT_TYPES, SHIFT_ICONS } from '../../config/constants';
+import { ArrowLeft, Camera, CheckSquare, Share2, Building, MapPin, Briefcase, Calendar, ChevronLeft, ChevronRight, FileText, Plus, X, Image, MessageSquare, Check, Trash2, StickyNote, RefreshCw, Layers, Eye } from 'lucide-react';
+import { EMPLOYEE_COLORS, SHIFT_TYPES, SHIFT_ICONS, SHIFT_COLORS } from '../../config/constants';
 import { toLocalISOString, addDays, isToday, getShift } from '../../utils/helpers';
 import { workerSchema, validate } from '../../utils/validation';
-import { calculateRotation, clearPeriod, generateRandomRests } from '../../utils/rotationLogic';
+import { generateFixedRotation, generateCyclicRotation, clearPeriod, generateRotationPreview } from '../../utils/rotationLogic';
 import Button from '../shared/Button';
 import { useToast } from '../shared/Toast';
 
@@ -16,13 +16,15 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
     const [selectedImage, setSelectedImage] = useState(null);
     const [errors, setErrors] = useState(null);
 
-    // Rotation System State
+    // NEW Simplified Rotation System State
     const [showRotationPanel, setShowRotationPanel] = useState(false);
-    const [rotationSequence, setRotationSequence] = useState(initialWorker.rotationSequence || []);
-    const [rotationDuration, setRotationDuration] = useState(3);
-    const [rotationDurationUnit, setRotationDurationUnit] = useState('months'); // months, weeks, days
+    const [rotationMode, setRotationMode] = useState('fixed'); // 'fixed' or 'cyclic'
     const [rotationStartDate, setRotationStartDate] = useState(toLocalISOString(new Date()));
-    const [rotationDays, setRotationDays] = useState([1, 2, 3, 4, 5, 6]); // Mon-Sat default
+    const [rotationDuration, setRotationDuration] = useState(3); // months
+    const [restDay, setRestDay] = useState(0); // 0=Sunday by default
+    const [selectedShiftCode, setSelectedShiftCode] = useState(''); // For fixed mode
+    const [cycleShifts, setCycleShifts] = useState([]); // For cyclic mode: array of shift codes
+    const [showPreview, setShowPreview] = useState(false);
 
     const avatarInputRef = useRef(null);
     const noteImageInputRef = useRef(null);
@@ -145,106 +147,95 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
         const currentShift = getShift(shifts, worker.id, dateStr); const types = Object.keys(SHIFT_TYPES); const currentIndex = types.indexOf(currentShift.type || 'off'); const nextType = types[(currentIndex + 1) % types.length]; const def = nextType === 'morning' ? { start: '08:00', end: '16:00' } : nextType === 'afternoon' ? { start: '14:00', end: '22:00' } : nextType === 'night' ? { start: '22:00', end: '06:00' } : { start: '', end: '' }; setShifts(prev => ({ ...prev, [`${worker.id}_${dateStr}`]: { type: nextType, ...def, coveringId: currentShift.coveringId } }));
     };
 
-    // --- ROTATION SYSTEM HANDLERS ---
-    // New Structure: rotationSequence = [ { id: 1, name: 'Semana 1', days: { 0: {type:'off'}, 1: {type:'morning'} ... } } ]
+    // --- NEW SIMPLIFIED ROTATION SYSTEM HANDLERS ---
 
-    const addRotationWeek = () => {
-        const newWeekId = rotationSequence.length + 1;
-        // Default template: Mon-Sat Morning, Sun Off
-        const defaultDays = {};
-        for (let i = 0; i <= 6; i++) {
-            defaultDays[i] = (i === 0) ? { type: 'off' } : { type: 'morning', start: '08:00', end: '16:00' };
-        }
+    // Build list of all available shifts (standard + custom)
+    const allAvailableShifts = useMemo(() => {
+        const standard = [
+            { code: 'morning', name: 'Mañana', start: '08:00', end: '16:00', type: 'morning' },
+            { code: 'afternoon', name: 'Tarde', start: '14:00', end: '22:00', type: 'afternoon' },
+            { code: 'night', name: 'Noche', start: '22:00', end: '06:00', type: 'night' }
+        ];
+        const custom = (settings.customShifts || []).map(cs => ({
+            code: cs.code,
+            name: `${cs.name} (${cs.code})`,
+            start: cs.start,
+            end: cs.end,
+            type: 'custom',
+            customShiftId: cs.id,
+            customShiftName: cs.name,
+            customShiftIcon: cs.icon,
+            customShiftColor: cs.color
+        }));
+        return [...standard, ...custom];
+    }, [settings.customShifts]);
 
-        const newWeek = {
-            id: Date.now(),
-            name: `Semana ${newWeekId}`,
-            days: defaultDays
-        };
-
-        const newSeq = [...rotationSequence, newWeek];
-        setRotationSequence(newSeq);
-        updateSimpleField({ rotationSequence: newSeq });
+    // Get shift config from code
+    const getShiftConfigByCode = (code) => {
+        const found = allAvailableShifts.find(s => s.code === code);
+        if (!found) return { type: 'morning', start: '08:00', end: '16:00' };
+        return { ...found };
     };
 
-    const updateWeekDay = (weekIndex, dayIndex, type, customCode = null) => {
-        const newSeq = [...rotationSequence];
-        let shiftConfig = {};
-
-        if (type === 'custom' && customCode) {
-            const def = settings.customShifts.find(cs => cs.code === customCode);
-            if (def) {
-                shiftConfig = {
-                    type: 'custom',
-                    code: def.code,
-                    start: def.start,
-                    end: def.end,
-                    customShiftId: def.id,
-                    customShiftName: def.name,
-                    customShiftIcon: def.icon,
-                    customShiftColor: def.color
-                };
-            }
-        } else if (type === 'off') {
-            shiftConfig = { type: 'off' };
-        } else {
-            const def = type === 'morning' ? { start: '08:00', end: '16:00' } : type === 'afternoon' ? { start: '14:00', end: '22:00' } : type === 'night' ? { start: '22:00', end: '06:00' } : {};
-            shiftConfig = { type, ...def };
-        }
-
-        newSeq[weekIndex].days[dayIndex] = shiftConfig;
-        setRotationSequence(newSeq);
-        updateSimpleField({ rotationSequence: newSeq });
+    // Add shift to cycle (for cyclic mode)
+    const addToCycle = (code) => {
+        if (!code) return;
+        setCycleShifts(prev => [...prev, code]);
     };
 
-    const removeRotationWeek = (index) => {
-        const newSeq = rotationSequence.filter((_, i) => i !== index);
-        setRotationSequence(newSeq);
-        updateSimpleField({ rotationSequence: newSeq });
+    // Remove shift from cycle
+    const removeFromCycle = (index) => {
+        setCycleShifts(prev => prev.filter((_, i) => i !== index));
     };
 
+    // Generate preview data
+    const previewData = useMemo(() => {
+        if (!showPreview) return [];
+
+        const shiftConfig = getShiftConfigByCode(selectedShiftCode);
+        const cycleConfigs = cycleShifts.map(code => getShiftConfigByCode(code));
+
+        return generateRotationPreview(
+            rotationStartDate,
+            4, // Show 4 weeks preview
+            shiftConfig,
+            restDay,
+            rotationMode === 'fixed',
+            cycleConfigs
+        );
+    }, [showPreview, rotationStartDate, selectedShiftCode, restDay, rotationMode, cycleShifts]);
+
+    // Apply the rotation
     const applyRotation = () => {
-        if (rotationSequence.length === 0) {
-            toast.show("Define al menos una semana de rotación.", "error");
-            return;
+        let updates = {};
+
+        if (rotationMode === 'fixed') {
+            if (!selectedShiftCode) {
+                toast.show("Selecciona un turno base.", "error");
+                return;
+            }
+            const shiftConfig = getShiftConfigByCode(selectedShiftCode);
+            updates = generateFixedRotation(worker.id, rotationStartDate, rotationDuration, shiftConfig, restDay);
+        } else {
+            if (cycleShifts.length === 0) {
+                toast.show("Agrega al menos un turno al ciclo.", "error");
+                return;
+            }
+            const cycleConfigs = cycleShifts.map(code => getShiftConfigByCode(code));
+            updates = generateCyclicRotation(worker.id, rotationStartDate, rotationDuration, cycleConfigs, restDay);
         }
 
-        // We pass a dummy 'daysToApply' array [0..6] because the logic 
-        // will now check specifically within the week object for config.
-        // We just need to trigger the loop for all days.
-        const allDays = [0, 1, 2, 3, 4, 5, 6];
-
-        const updates = calculateRotation(worker.id, rotationStartDate, rotationDuration, rotationSequence, allDays);
         if (Object.keys(updates).length > 0) {
             setShifts(prev => ({ ...prev, ...updates }));
-            toast.show(`Rotación aplicada exitosamente por ${rotationDuration} meses.`, "success");
+            toast.show(`Rotación aplicada: ${Object.keys(updates).length} días programados.`, "success");
             setShowRotationPanel(false);
+            setShowPreview(false);
         } else {
-            toast.show("No se generaron cambios. Revisa la fechas.", "warning");
+            toast.show("No se generaron cambios. Revisa las fechas.", "warning");
         }
     };
 
-    // Quick Fill for a Week (Helper)
-    const fillWeek = (weekIndex, type) => {
-        const newSeq = [...rotationSequence];
-        const defaultDays = {};
-        for (let i = 0; i <= 6; i++) {
-            // Keep Sunday off if filling standard shifts, unless explicitly 'off'
-            if (i === 0 && type !== 'off') {
-                defaultDays[i] = { type: 'off' };
-            } else {
-                // ... same logic as addRotationStep ...
-                if (type === 'morning') defaultDays[i] = { type: 'morning', start: '08:00', end: '16:00' };
-                else if (type === 'afternoon') defaultDays[i] = { type: 'afternoon', start: '14:00', end: '22:00' };
-                else if (type === 'night') defaultDays[i] = { type: 'night', start: '22:00', end: '06:00' };
-                else defaultDays[i] = { type: 'off' };
-            }
-        }
-        newSeq[weekIndex].days = defaultDays;
-        setRotationSequence(newSeq);
-        updateSimpleField({ rotationSequence: newSeq });
-    }
-
+    // Clear period handler
     const handleClearPeriod = () => {
         if (!window.confirm("¿Seguro que deseas borrar todos los turnos del periodo seleccionado?")) return;
         const startDate = new Date(rotationStartDate + 'T00:00:00');
@@ -255,177 +246,6 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
         toast.show("Periodo limpiado correctamente.", "success");
     };
 
-    // --- AUTO PATTERN GENERATOR ---
-    const generatePattern = (patternType) => {
-        if (rotationSequence.length > 0) {
-            if (!window.confirm("Esto reemplazará tu secuencia actual. ¿Continuar?")) return;
-        }
-
-        let newSeq = [];
-
-        if (patternType === '6x1') {
-            // Estándar 6x1: L-S Mañana, Domingo Descanso
-            const days = {};
-            for (let i = 0; i <= 6; i++) {
-                days[i] = (i === 0) ? { type: 'off' } : { type: 'morning', start: '08:00', end: '16:00' };
-            }
-            newSeq.push({ id: Date.now(), name: 'Semana Estándar (6x1)', days });
-        }
-        else if (patternType === '5x2') {
-            // Estándar 5x2: L-V Mañana, S-D Descanso
-            const days = {};
-            for (let i = 0; i <= 6; i++) {
-                days[i] = (i === 0 || i === 6) ? { type: 'off' } : { type: 'morning', start: '08:00', end: '16:00' };
-            }
-            newSeq.push({ id: Date.now(), name: 'Semana Oficinista (5x2)', days });
-        }
-        else if (patternType === 'random') {
-            // Generar 4 semanas variadas
-            // Sugerencia: 1 Sem Mañana, 1 Sem Tarde, 1 Sem Noche, 1 Sem Mixta
-            const shifts = ['morning', 'afternoon', 'night'];
-
-            for (let w = 1; w <= 4; w++) {
-                const days = {};
-                // Pick a dominant shift for the week
-                const domShift = shifts[(w - 1) % 3];
-                // Random rest day (0=Sun, but let's vary it, e.g. Sun or Mon? Lets keep Sun fixed for simplicity or random)
-                // User asked for "autoprogramen tambien los dias de descanso" -> implied variety.
-                const restDay = Math.floor(Math.random() * 7);
-
-                for (let i = 0; i <= 6; i++) {
-                    if (i === restDay) {
-                        days[i] = { type: 'off' };
-                    } else {
-                        // 20% chance of random deviation from dominant shift? No, keep it clean for now.
-                        const def = domShift === 'morning' ? { start: '08:00', end: '16:00' } : domShift === 'afternoon' ? { start: '14:00', end: '22:00' } : { start: '22:00', end: '06:00' };
-                        days[i] = { type: domShift, ...def };
-                    }
-                }
-                newSeq.push({ id: Date.now() + w, name: `Semana ${w} (${domShift === 'morning' ? 'M' : domShift === 'afternoon' ? 'T' : 'N'}) - Descansa: ${['D', 'L', 'M', 'X', 'J', 'V', 'S'][restDay]}`, days });
-            }
-        }
-
-        setRotationSequence(newSeq);
-        updateSimpleField({ rotationSequence: newSeq });
-        toast.show("Patrón generado exitosamente.", "success");
-    };
-
-    // --- SMART FILL LOGIC ---
-    const smartFillWeek = (weekIdx) => {
-        const week = rotationSequence[weekIdx];
-        if (!week) return;
-
-        // 1. Identify Source Shift (Priority: Monday (1) > Sunday (0) > First Found)
-        let sourceShift = week.days?.[1];
-        if (!sourceShift || sourceShift.type === 'off') sourceShift = week.days?.[0];
-        if (!sourceShift || sourceShift.type === 'off') {
-            // Fallback to find first working day
-            const foundKey = Object.keys(week.days || {}).find(k => week.days[k].type !== 'off');
-            if (foundKey) sourceShift = week.days[foundKey];
-        }
-
-        if (!sourceShift || !sourceShift.type || sourceShift.type === 'off') {
-            toast.show("Configura primero un turno (ej. Lunes) para replicar.", "error");
-            return;
-        }
-
-        const newDays = { ...week.days };
-
-        const timeToMin = (t) => {
-            if (!t) return 0;
-            const [h, m] = t.split(':').map(Number);
-            return h * 60 + m;
-        };
-
-        const sourceStart = timeToMin(sourceShift.start);
-        // sourceEnd unused but calculated in prev version. Skip duration calc for now.
-
-        // 2. Iterate all days
-        for (let i = 0; i < 7; i++) {
-            // Check if Source is valid for this day
-            let targetType = sourceShift.type;
-            let targetCode = sourceShift.code;
-            let targetProps = { ...sourceShift };
-
-            let isValid = true;
-            if (targetType === 'custom') {
-                const shiftDef = settings.customShifts.find(cs => cs.code === targetCode);
-                if (shiftDef && shiftDef.allowedDays && !shiftDef.allowedDays.includes(i)) {
-                    isValid = false;
-                }
-            }
-
-            if (isValid) {
-                newDays[i] = { ...targetProps };
-            } else {
-                // INTELLIGENT FALLBACK
-                const bestMatch = settings.customShifts.find(cs => {
-                    if (cs.allowedDays && !cs.allowedDays.includes(i)) return false;
-                    const cStart = timeToMin(cs.start);
-                    // Match Start Time exactly, or very close
-                    return Math.abs(cStart - sourceStart) < 30; // 30 min tolerance
-                });
-
-                if (bestMatch) {
-                    newDays[i] = {
-                        type: 'custom',
-                        code: bestMatch.code,
-                        start: bestMatch.start,
-                        end: bestMatch.end,
-                        customShiftId: bestMatch.id,
-                        customShiftName: bestMatch.name,
-                        customShiftIcon: bestMatch.icon,
-                        customShiftColor: bestMatch.color
-                    };
-                } else {
-                    // Fallback to Standard
-                    let stdType = 'morning';
-                    if (sourceStart >= 720 && sourceStart < 1080) stdType = 'afternoon';
-                    else if (sourceStart >= 1080 || sourceStart < 360) stdType = 'night';
-
-                    newDays[i] = {
-                        type: stdType,
-                        start: sourceShift.start,
-                        end: sourceShift.end
-                    };
-                }
-            }
-        }
-
-        const newSeq = [...rotationSequence];
-        newSeq[weekIdx] = { ...week, days: newDays };
-        setRotationSequence(newSeq);
-        updateSimpleField({ rotationSequence: newSeq });
-        toast.show("Semana replicada inteligentemente.", "success");
-    };
-
-    const handleGenerateRandomRests = () => {
-        const restsInput = window.prompt("¿Cuántos días de descanso aleatorios por semana deseas asignar? (ej. 1 o 2)", "1");
-        if (!restsInput) return;
-        const restsPerWeek = parseInt(restsInput);
-        if (isNaN(restsPerWeek) || restsPerWeek < 1) {
-            toast.show("Número inválido.", "error");
-            return;
-        }
-
-        // Calculate End Date
-        const start = new Date(rotationStartDate + 'T00:00:00');
-        const end = new Date(start);
-
-        if (rotationDurationUnit === 'months') end.setMonth(end.getMonth() + rotationDuration);
-        else if (rotationDurationUnit === 'weeks') end.setDate(end.getDate() + (rotationDuration * 7));
-        else if (rotationDurationUnit === 'days') end.setDate(end.getDate() + rotationDuration);
-
-        // Call Logic
-        const updates = generateRandomRests(worker.id, rotationStartDate, toLocalISOString(end), restsPerWeek);
-
-        if (Object.keys(updates).length > 0) {
-            setShifts(prev => ({ ...prev, ...updates }));
-            toast.show(`Descansos asignados aleatoriamente (${Object.keys(updates).length} días).`, "success");
-        } else {
-            toast.show("No se pudieron generar descansos (revisa las fechas).", "warning");
-        }
-    };
 
     const selectedSedeObj = sedes.find(s => s.name === (worker.sede || worker.location));
     const availablePlaces = selectedSedeObj ? selectedSedeObj.places : [];
@@ -510,149 +330,191 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
 
                         {/* Collapsible Content */}
                         <div className={`overflow-hidden transition-all duration-300 ${showRotationPanel ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                            <p className="text-xs text-[var(--text-tertiary)] mb-4">Configura cada semana de tu ciclo de rotación. Define qué turno toca cada día.</p>
+                            <p className="text-xs text-[var(--text-tertiary)] mb-4">Programa turnos automáticamente para este trabajador.</p>
 
-                            {/* 1. Sequence Builder (Weeks) */}
-                            <div className="space-y-6 mb-8">
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="text-xs font-bold text-[var(--text-tertiary)] flex items-center gap-2">
-                                        Generar Automáticamente:
+                            {/* Mode Selector */}
+                            <div className="flex gap-2 mb-6">
+                                <button
+                                    onClick={() => setRotationMode('fixed')}
+                                    className={`flex-1 py-2 px-4 rounded-xl text-xs font-bold transition-all border ${rotationMode === 'fixed' ? 'bg-[var(--text-primary)] text-[var(--bg-body)] border-transparent' : 'bg-[var(--glass-dock)] text-[var(--text-secondary)] border-[var(--glass-border)]'}`}
+                                >
+                                    🔒 Turno Fijo
+                                </button>
+                                <button
+                                    onClick={() => setRotationMode('cyclic')}
+                                    className={`flex-1 py-2 px-4 rounded-xl text-xs font-bold transition-all border ${rotationMode === 'cyclic' ? 'bg-[var(--text-primary)] text-[var(--bg-body)] border-transparent' : 'bg-[var(--glass-dock)] text-[var(--text-secondary)] border-[var(--glass-border)]'}`}
+                                >
+                                    🔄 Rotativo
+                                </button>
+                            </div>
+
+                            {/* Fixed Mode Configuration */}
+                            {rotationMode === 'fixed' && (
+                                <div className="space-y-4 mb-6 p-4 rounded-xl bg-[var(--glass-dock)] border border-[var(--glass-border)]">
+                                    <div>
+                                        <label className="text-[10px] font-bold uppercase text-[var(--text-secondary)] block mb-2">Turno Base</label>
                                         <select
-                                            onChange={(e) => { if (e.target.value) generatePattern(e.target.value); e.target.value = ''; }}
-                                            className="bg-[var(--glass-dock)] border border-[var(--glass-border)] rounded-lg px-2 py-1 outline-none cursor-pointer hover:bg-[var(--glass-border)] transition-colors"
+                                            value={selectedShiftCode}
+                                            onChange={(e) => setSelectedShiftCode(e.target.value)}
+                                            className="glass-input w-full p-3 text-sm outline-none rounded-lg"
                                         >
-                                            <option value="">-- Seleccionar Patrón --</option>
-                                            <option value="6x1">Estándar 6x1 (Dom. Descanso)</option>
-                                            <option value="5x2">Oficina 5x2 (Sáb-Dom Descanso)</option>
-                                            <option value="random">🌟 Sugerencia Inteligente (4 Semanas)</option>
+                                            <option value="">-- Seleccionar Turno --</option>
+                                            <optgroup label="Turnos Estándar">
+                                                <option value="morning">🌅 Mañana (08:00 - 16:00)</option>
+                                                <option value="afternoon">🌆 Tarde (14:00 - 22:00)</option>
+                                                <option value="night">🌙 Noche (22:00 - 06:00)</option>
+                                            </optgroup>
+                                            {settings.customShifts && settings.customShifts.length > 0 && (
+                                                <optgroup label="Turnos Personalizados">
+                                                    {settings.customShifts.map(cs => (
+                                                        <option key={cs.id} value={cs.code}>
+                                                            {cs.icon || '📋'} {cs.name} ({cs.start} - {cs.end})
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            )}
                                         </select>
                                     </div>
                                 </div>
+                            )}
 
-                                {rotationSequence.map((week, weekIdx) => (
-                                    <div key={week.id || weekIdx} className="glass-panel p-4 rounded-xl border border-[var(--glass-border)] animate-enter relative">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <h4 className="text-sm font-bold text-[var(--text-primary)]">Semana {weekIdx + 1}</h4>
-                                            <div className="flex items-center gap-2">
-                                                <div className="flex gap-1">
-                                                    <button onClick={() => smartFillWeek(weekIdx)} className="px-2 py-1 text-[10px] bg-purple-500/10 text-purple-500 rounded hover:bg-purple-500/20 transition-colors flex items-center gap-1 font-bold" title="Replicar Inteligentemente (Basado en Lunes)"><RefreshCw size={10} /> Smart</button>
-                                                    <div className="w-[1px] h-4 bg-[var(--glass-border)] mx-1"></div>
-                                                    <button onClick={() => fillWeek(weekIdx, 'morning')} className="px-2 py-1 text-[10px] bg-yellow-500/10 text-yellow-500 rounded hover:bg-yellow-500/20 transition-colors" title="Rellenar Mañanas">M</button>
-                                                    <button onClick={() => fillWeek(weekIdx, 'afternoon')} className="px-2 py-1 text-[10px] bg-blue-500/10 text-blue-500 rounded hover:bg-blue-500/20 transition-colors" title="Rellenar Tardes">T</button>
-                                                    <button onClick={() => fillWeek(weekIdx, 'night')} className="px-2 py-1 text-[10px] bg-indigo-500/10 text-indigo-500 rounded hover:bg-indigo-500/20 transition-colors" title="Rellenar Noches">N</button>
-                                                    <button onClick={() => fillWeek(weekIdx, 'off')} className="px-2 py-1 text-[10px] bg-gray-500/10 text-gray-500 rounded hover:bg-gray-500/20 transition-colors" title="Limpiar Semana">X</button>
-                                                </div>
-                                                <button onClick={() => removeRotationWeek(weekIdx)} className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={14} /></button>
-                                            </div>
-                                        </div>
+                            {/* Cyclic Mode Configuration */}
+                            {rotationMode === 'cyclic' && (
+                                <div className="space-y-4 mb-6 p-4 rounded-xl bg-[var(--glass-dock)] border border-[var(--glass-border)]">
+                                    <label className="text-[10px] font-bold uppercase text-[var(--text-secondary)] block mb-2">Secuencia de Turnos (Ciclo)</label>
 
-                                        {/* Days Grid */}
-                                        <div className="grid grid-cols-7 gap-1">
-                                            {['D', 'L', 'M', 'X', 'J', 'V', 'S'].map((dayLabel, dayIdx) => {
-                                                const dayConfig = week.days?.[dayIdx] || { type: 'off' };
-                                                const isOff = dayConfig.type === 'off' || !dayConfig.type;
-                                                const style = SHIFT_TYPES[dayConfig.type]?.style || (dayConfig.type === 'custom' ? '' : 'bg-gray-500/10 text-gray-400');
-                                                const customStyle = dayConfig.type === 'custom' ? { backgroundColor: `${dayConfig.customShiftColor}20`, color: dayConfig.customShiftColor, borderColor: dayConfig.customShiftColor } : {};
-
+                                    {/* Current cycle display */}
+                                    <div className="flex flex-wrap gap-2 mb-3">
+                                        {cycleShifts.length === 0 ? (
+                                            <span className="text-xs text-[var(--text-tertiary)] italic">Agrega turnos al ciclo...</span>
+                                        ) : (
+                                            cycleShifts.map((code, idx) => {
+                                                const shift = allAvailableShifts.find(s => s.code === code);
                                                 return (
-                                                    <div key={dayIdx} className="flex flex-col items-center gap-1">
-                                                        <span className="text-[9px] font-bold text-[var(--text-tertiary)]">{dayLabel}</span>
-                                                        <div className="relative group w-full">
-                                                            <button
-                                                                className={`w-full h-9 rounded-lg flex items-center justify-center text-xs font-bold border transition-all ${style}`}
-                                                                style={customStyle}
-                                                            >
-                                                                {dayConfig.type === 'custom' ? (dayConfig.customShiftIcon || dayConfig.code?.substring(0, 2)) : (SHIFT_TYPES[dayConfig.type]?.code || '-')}
-                                                            </button>
+                                                    <div key={idx} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[var(--bg-body)] border border-[var(--glass-border)] text-xs font-bold">
+                                                        <span className="text-[var(--text-secondary)]">S{idx + 1}:</span>
+                                                        <span className="text-[var(--text-primary)]">{shift?.name || code}</span>
+                                                        <button onClick={() => removeFromCycle(idx)} className="ml-1 text-red-500 hover:text-red-600"><X size={12} /></button>
+                                                        {idx < cycleShifts.length - 1 && <span className="text-[var(--text-tertiary)] ml-1">→</span>}
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
 
-                                                            {/* Hover/Focus Menu for quick selection (Simple approach for now) */}
-                                                            {/* In a real mobile app, clicking would open a bottom sheet. Here we use a precise hover/focus trick or just cycle on click if we want simplicity. 
-                                                                Let's use a standard select overlay for simplicity and reliability. */}
-                                                            <select
-                                                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                                                                value={dayConfig.type === 'custom' ? dayConfig.code : dayConfig.type}
-                                                                onChange={(e) => {
-                                                                    const val = e.target.value;
-                                                                    const isCustom = settings.customShifts.some(cs => cs.code === val);
-                                                                    updateWeekDay(weekIdx, dayIdx, isCustom ? 'custom' : val, isCustom ? val : null);
-                                                                }}
-                                                            >
-                                                                <option value="off">Libre (-)</option>
-                                                                <option value="morning">Mañana (M)</option>
-                                                                <option value="afternoon">Tarde (T)</option>
-                                                                <option value="night">Noche (N)</option>
-                                                                {settings?.customShifts?.filter(cs => {
-                                                                    const isAllowedByDay = !cs.allowedDays || cs.allowedDays.includes(dayIdx);
-                                                                    // CORRECCIÓN: Si allowedShifts es [], significa NINGUNO.
-                                                                    const isAllowedByWorker = worker.allowedShifts === undefined || worker.allowedShifts === null || worker.allowedShifts.includes(cs.code);
-                                                                    return isAllowedByDay && isAllowedByWorker;
-                                                                }).map(cs => (
-                                                                    <option key={cs.id} value={cs.code}>{cs.name} ({cs.code})</option>
-                                                                ))}
-                                                            </select>
+                                    {/* Add to cycle */}
+                                    <div className="flex gap-2">
+                                        <select
+                                            id="cycleShiftSelect"
+                                            className="glass-input flex-1 p-2 text-sm outline-none rounded-lg"
+                                            defaultValue=""
+                                        >
+                                            <option value="">-- Agregar Turno --</option>
+                                            <optgroup label="Turnos Estándar">
+                                                <option value="morning">🌅 Mañana</option>
+                                                <option value="afternoon">🌆 Tarde</option>
+                                                <option value="night">🌙 Noche</option>
+                                            </optgroup>
+                                            {settings.customShifts && settings.customShifts.length > 0 && (
+                                                <optgroup label="Turnos Personalizados">
+                                                    {settings.customShifts.map(cs => (
+                                                        <option key={cs.id} value={cs.code}>{cs.icon || '📋'} {cs.name}</option>
+                                                    ))}
+                                                </optgroup>
+                                            )}
+                                        </select>
+                                        <button
+                                            onClick={() => {
+                                                const select = document.getElementById('cycleShiftSelect');
+                                                if (select.value) {
+                                                    addToCycle(select.value);
+                                                    select.value = '';
+                                                }
+                                            }}
+                                            className="px-4 py-2 rounded-lg bg-[var(--text-primary)] text-[var(--bg-body)] text-xs font-bold"
+                                        >
+                                            <Plus size={14} />
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-[var(--text-tertiary)]">Cada semana usará el siguiente turno del ciclo.</p>
+                                </div>
+                            )}
+
+                            {/* Common Settings: Rest Day */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase text-[var(--text-secondary)] block mb-1">Día de Descanso</label>
+                                    <select
+                                        value={restDay}
+                                        onChange={(e) => setRestDay(parseInt(e.target.value))}
+                                        className="glass-input w-full p-2 text-sm outline-none rounded-lg"
+                                    >
+                                        <option value={0}>Domingo</option>
+                                        <option value={1}>Lunes</option>
+                                        <option value={2}>Martes</option>
+                                        <option value={3}>Miércoles</option>
+                                        <option value={4}>Jueves</option>
+                                        <option value={5}>Viernes</option>
+                                        <option value={6}>Sábado</option>
+                                        <option value={-1}>Sin día fijo</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase text-[var(--text-secondary)] block mb-1">Fecha Inicio</label>
+                                    <input type="date" value={rotationStartDate} onChange={(e) => setRotationStartDate(e.target.value)} className="glass-input w-full p-2 text-sm rounded-lg" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase text-[var(--text-secondary)] block mb-1">Duración (Meses)</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="12"
+                                        value={rotationDuration}
+                                        onChange={(e) => setRotationDuration(parseInt(e.target.value) || 1)}
+                                        className="glass-input w-full p-2 text-sm text-center rounded-lg"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Preview Section */}
+                            <div className="mb-6">
+                                <button
+                                    onClick={() => setShowPreview(!showPreview)}
+                                    className="flex items-center gap-2 text-xs font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors mb-2"
+                                >
+                                    <Eye size={14} /> {showPreview ? 'Ocultar' : 'Ver'} Previsualización
+                                </button>
+
+                                {showPreview && previewData.length > 0 && (
+                                    <div className="p-3 rounded-xl bg-[var(--glass-dock)] border border-[var(--glass-border)] overflow-x-auto">
+                                        <div className="flex gap-1 min-w-max">
+                                            {previewData.slice(0, 28).map((item, idx) => {
+                                                const isOff = item.shift?.type === 'off';
+                                                const shiftStyle = SHIFT_TYPES[item.shift?.type]?.style || 'bg-gray-500/10 text-gray-400';
+                                                const isNewWeek = idx > 0 && item.dayOfWeek === 1;
+                                                return (
+                                                    <div key={idx} className={`flex flex-col items-center ${isNewWeek ? 'ml-2 pl-2 border-l border-[var(--glass-border)]' : ''}`}>
+                                                        <span className="text-[8px] text-[var(--text-tertiary)]">{['D', 'L', 'M', 'X', 'J', 'V', 'S'][item.dayOfWeek]}</span>
+                                                        <div className={`w-6 h-6 rounded flex items-center justify-center text-[9px] font-bold ${shiftStyle}`}>
+                                                            {isOff ? '-' : (item.shift?.code?.substring(0, 1) || SHIFT_TYPES[item.shift?.type]?.code || '?')}
                                                         </div>
+                                                        <span className="text-[8px] text-[var(--text-tertiary)]">{item.date.getDate()}</span>
                                                     </div>
                                                 );
                                             })}
                                         </div>
+                                        <p className="text-[9px] text-[var(--text-tertiary)] mt-2 text-center">Primeras 4 semanas</p>
                                     </div>
-                                ))}
-
-                                <button onClick={addRotationWeek} className="w-full py-3 rounded-xl border border-dashed border-[var(--glass-border)] text-sm font-bold text-[var(--text-secondary)] hover:bg-[var(--glass-dock)] hover:text-[var(--text-primary)] transition-all flex items-center justify-center gap-2">
-                                    <Plus size={16} /> Agregar Semana de Rotación
-                                </button>
+                                )}
                             </div>
 
-                            {/* 2. Projection Settings */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 pt-6 border-t border-[var(--glass-border)]">
-                                <div>
-                                    <label className="text-[10px] font-bold uppercase text-[var(--text-secondary)] block mb-1">Fecha Inicio</label>
-                                    <input type="date" value={rotationStartDate} onChange={(e) => setRotationStartDate(e.target.value)} className="glass-input w-full p-2 text-sm" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold uppercase text-[var(--text-secondary)] block mb-1">Duración</label>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="365"
-                                            value={rotationDuration}
-                                            onChange={(e) => setRotationDuration(parseInt(e.target.value) || 1)}
-                                            className="glass-input w-20 p-2 text-sm text-center"
-                                        />
-                                        <select
-                                            value={rotationDurationUnit}
-                                            onChange={(e) => setRotationDurationUnit(e.target.value)}
-                                            className="glass-input flex-1 p-2 text-sm outline-none"
-                                        >
-                                            <option value="days">Días</option>
-                                            <option value="weeks">Semanas</option>
-                                            <option value="months">Meses</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 3. Actions */}
+                            {/* Actions */}
                             <div className="flex flex-col gap-3 pt-4 border-t border-[var(--glass-border)]">
-                                <Button onClick={applyRotation} variant="primary" icon={RefreshCw} className="w-full justify-center">Aplicar Rotación Completa</Button>
-
-                                <button
-                                    onClick={handleGenerateRandomRests}
-                                    className="w-full py-3 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-dock)] text-[var(--text-primary)] text-xs font-bold hover:bg-[var(--glass-border)] transition-colors flex items-center justify-center gap-2"
-                                >
-                                    <Dices size={16} className="text-purple-400" /> 🎲 Generar Solo Descansos
-                                </button>
-                                <p className="text-[10px] text-center text-[var(--text-tertiary)] -mt-1 mb-2">
-                                    Genera días libres aleatorios y deja el resto sin asignar.
-                                </p>
+                                <Button onClick={applyRotation} variant="primary" icon={RefreshCw} className="w-full justify-center">Aplicar Rotación</Button>
 
                                 <button onClick={handleClearPeriod} className="w-full py-3 rounded-xl border border-red-500/30 text-red-500 text-xs font-bold hover:bg-red-500/10 transition-colors flex items-center justify-center gap-2">
-                                    <Trash2 size={14} /> Limpiar Periodo (Reset)
+                                    <Trash2 size={14} /> Limpiar Periodo
                                 </button>
-                                <p className="text-[10px] text-center text-[var(--text-tertiary)] -mt-1">
-                                    "Limpiar Periodo" borrará todos los turnos del rango seleccionado.
-                                </p>
                             </div>
                         </div>
                     </div>

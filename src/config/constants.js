@@ -50,7 +50,10 @@ export const SHIFT_COLORS = [
 
 // ... resto del archivo igual ...
 export const EMPLOYEE_COLORS = ['#8E8E93', '#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#007AFF', '#5856D6', '#AF52DE', '#FF2D55', '#A2845E'];
-// ...
+
+export const APP_VERSION = "1.0.1";
+export const LAST_UPDATE = "2025-12-18";
+
 export const APP_THEMES = [
     { id: 'default', name: 'Original', bg: '#f5f5f7', accent: '#007AFF' },
     { id: 'lavender', name: 'Lavanda', bg: '#E6E6FA', accent: '#5856D6' },

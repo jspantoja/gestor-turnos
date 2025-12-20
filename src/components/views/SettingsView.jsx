@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Clipboard, ToggleRight, ToggleLeft, Palette, Zap, Building, PlusCircle, Trash2, X, Repeat, DollarSign, Shield, LogOut, Cloud, Database, Download, Upload, ShieldCheck } from 'lucide-react';
+import { Settings, Clipboard, ToggleRight, ToggleLeft, Palette, Zap, Building, PlusCircle, Trash2, X, Repeat, DollarSign, Shield, LogOut, Cloud, Database, Download, Upload, ShieldCheck, Info, Coffee, Check } from 'lucide-react';
 import SectionHeader from '../shared/SectionHeader';
-import { APP_THEMES, SHIFT_ICONS, SHIFT_COLORS } from '../../config/constants';
+import { APP_THEMES, SHIFT_ICONS, SHIFT_COLORS, APP_VERSION, LAST_UPDATE } from '../../config/constants';
 import { settingsSchema, validate } from '../../utils/validation';
 import { useToast } from '../shared/Toast';
 
@@ -13,7 +13,41 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
     const [expandedColorPickerShiftId, setExpandedColorPickerShiftId] = useState(null);
     const [activeSubTab, setActiveSubTab] = useState('sync');
     const [selectedIconId, setSelectedIconId] = useState('sun');
-    const [newShift, setNewShift] = useState({ code: '', payrollCode: '', name: '', start: '06:00', end: '14:00', icon: 'sun' });
+    const [newShift, setNewShift] = useState({ code: '', payrollCode: '', matrixCode: '', name: '', start: '06:00', end: '14:00', icon: 'sun' });
+    const [isMissingCode, setIsMissingCode] = useState(false);
+    const [hasBreak, setHasBreak] = useState(false);
+    const [editingStatusId, setEditingStatusId] = useState(null);
+    const [editedStatus, setEditedStatus] = useState(null);
+
+    const startEditingStatus = (status) => {
+        setEditingStatusId(status.id);
+        setEditedStatus(status);
+    };
+
+    const cancelEditingStatus = () => {
+        setEditingStatusId(null);
+        setEditedStatus(null);
+    };
+
+    const saveEditingStatus = () => {
+        if (!editedStatus || !editedStatus.name || !editedStatus.code || !editedStatus.matrixCode) {
+            error("Nombre, código y código de matriz son requeridos.");
+            return;
+        }
+        updateSettings({
+            customStatuses: settings.customStatuses.map(s =>
+                s.id === editingStatusId ? { ...editedStatus, code: editedStatus.code.toUpperCase(), matrixCode: editedStatus.matrixCode } : s
+            )
+        });
+        setEditingStatusId(null);
+        setEditedStatus(null);
+        success('Estado actualizado');
+    };
+
+    const handleStatusEditChange = (e) => {
+        const { name, value } = e.target;
+        setEditedStatus(prev => ({ ...prev, [name]: value }));
+    };
 
     const validateAndUpdate = (updates) => {
         if (updates.payrollConfig) {
@@ -39,10 +73,17 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
         updateSettings({
             customShifts: [
                 ...(settings.customShifts || []),
-                { id: Date.now().toString(), ...newShift, icon: selectedIconId, color: 'blue', colorHex: '#3b82f6' }
+                { 
+                    id: Date.now().toString(), 
+                    ...newShift, 
+                    matrixCode: newShift.matrixCode || newShift.code, // Fallback
+                    icon: selectedIconId, 
+                    color: 'blue', 
+                    colorHex: '#3b82f6' 
+                }
             ]
         });
-        setNewShift({ code: '', payrollCode: '', name: '', start: '06:00', end: '14:00', icon: 'sun' });
+        setNewShift({ code: '', payrollCode: '', matrixCode: '', name: '', start: '06:00', end: '14:00', icon: 'sun' });
         setSelectedIconId('sun');
         success("¡Turno agregado con éxito!");
     };
@@ -51,22 +92,78 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
         if (activeSubTab !== 'management') return;
         const lookup = async () => {
             try {
-                const response = await fetch('/src/data/turnos.json');
+                // 1. Check local registrations first
+                const localMatch = (settings.customShifts || []).find(s => s.start === newShift.start && s.end === newShift.end);
+
+                if (localMatch) {
+                    setNewShift(prev => ({ ...prev, code: localMatch.code, name: localMatch.name }));
+                    setIsMissingCode(false);
+                    return;
+                }
+
+                // 2. Check master database
+                const response = await fetch('/data/turnos.json');
                 const data = await response.json();
-                const match = data.find(t => t["Hora Entrada"] === newShift.start && t["Hora Salida"] === newShift.end);
+
+                // FILTER: Only match shifts that agree with our "hasBreak" setting
+                const validShifts = data.filter(t => {
+                    if (hasBreak) {
+                        return t["Tipo descanso"] !== "Sin descanso";
+                    } else {
+                        return t["Tipo descanso"] === "Sin descanso";
+                    }
+                });
+
+                const match = validShifts.find(t => t["Hora Entrada"] === newShift.start && t["Hora Salida"] === newShift.end);
+
                 if (match) {
                     setNewShift(prev => ({
                         ...prev,
                         code: match.ID.toString(),
                         name: prev.name === '' || prev.name.includes('Turno') ? `Turno ${match.ID}` : prev.name
                     }));
+                    setIsMissingCode(false);
+                } else {
+                    setIsMissingCode(true);
                 }
             } catch (e) {
                 console.error("Error loading turnos.json:", e);
             }
         };
         lookup();
-    }, [newShift.start, newShift.end, activeSubTab]);
+    }, [newShift.start, newShift.end, activeSubTab, settings.customShifts, hasBreak]);
+
+    // REVERSE LOOKUP: When user types a code, auto-fill hours
+    useEffect(() => {
+        if (activeSubTab !== 'management') return;
+        if (!newShift.code || isNaN(parseInt(newShift.code))) return;
+
+        const reverseLookup = async () => {
+            try {
+                const response = await fetch('/data/turnos.json');
+                const data = await response.json();
+                const match = data.find(t => t.ID === parseInt(newShift.code));
+
+                if (match) {
+                    setNewShift(prev => ({
+                        ...prev,
+                        start: match["Hora Entrada"] || prev.start,
+                        end: match["Hora Salida"] || prev.end,
+                        name: prev.name || `Turno ${match.ID}`
+                    }));
+                    // Set break toggle based on match
+                    setHasBreak(match["Tipo descanso"] !== "Sin descanso");
+                    setIsMissingCode(false);
+                }
+            } catch (e) {
+                console.error("Error in reverse lookup:", e);
+            }
+        };
+
+        // Debounce to avoid excessive lookups
+        const timer = setTimeout(reverseLookup, 300);
+        return () => clearTimeout(timer);
+    }, [newShift.code, activeSubTab]);
 
     const reportCfg = settings.reportConfig || { showHeader: true, showDays: true, showLocation: true, showReliever: false, showShiftSummary: true };
 
@@ -116,6 +213,21 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                     <span className="text-[10px] text-[var(--text-secondary)]">Última sincronización: <span className="font-bold text-[var(--text-primary)]">{new Date(settings.lastSync).toLocaleString()}</span></span>
                                 </div>
                             )}
+
+                            <div className="mb-6 p-4 bg-[var(--glass-dock)] rounded-xl border border-[var(--glass-border)] flex flex-col gap-2">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Info size={14} className="text-[var(--accent-solid)]" />
+                                        <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase">Información de Sistema</span>
+                                    </div>
+                                    <span className="text-[10px] font-mono bg-[var(--accent-solid)]/10 text-[var(--accent-solid)] px-2 py-0.5 rounded-full font-bold">v{APP_VERSION}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-[10px]">
+                                    <span className="text-[var(--text-tertiary)]">Compilación actual</span>
+                                    <span className="text-[var(--text-primary)] font-bold">{LAST_UPDATE}</span>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-2 gap-3 pt-4 border-t border-[var(--glass-border)]">
                                 <button onClick={exportData} className="flex flex-col items-center gap-2 p-3 rounded-xl border border-[var(--glass-border)] hover:bg-[var(--glass-dock)] transition-all"><Download size={18} /><span className="text-[10px] font-bold">EXPORTAR</span></button>
                                 <label className="flex flex-col items-center gap-2 p-3 rounded-xl border border-[var(--glass-border)] cursor-pointer hover:bg-[var(--glass-dock)]"><Upload size={18} /><span className="text-[10px] font-bold">IMPORTAR</span><input type="file" accept=".json" className="hidden" onChange={(e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = (ev) => { try { const d = JSON.parse(ev.target.result); if (confirm("¿Importar datos? Se sobrescribirá tu estado actual.")) { importData(d); success("¡Datos importados!"); } } catch (err) { error("JSON inválido"); } }; r.readAsText(f); }} /></label>
@@ -138,19 +250,19 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                                     <div className="flex items-center gap-3">
                                                         <div className="p-2 rounded-lg bg-[var(--accent-solid)]/10 text-[var(--accent-solid)]"><IconComp size={18} /></div>
                                                         <div>
-                                                            <div className="text-sm font-bold flex items-center gap-2">{shift.name} <span className="font-mono text-[10px] bg-[var(--glass-dock)] px-1.5 py-0.5 rounded opacity-70">[{shift.code}]</span></div>
+                                                            <div className="text-sm font-bold flex items-center gap-2">{shift.name} <span className="font-mono text-[10px] bg-[var(--glass-dock)] px-1.5 py-0.5 rounded opacity-70" title="Código de Matriz">[{shift.matrixCode || shift.code}]</span></div>
                                                             <div className="text-[10px] text-[var(--text-secondary)]">{shift.start} - {shift.end} {shift.payrollCode && `• Nómina: ${shift.payrollCode}`}</div>
                                                         </div>
                                                     </div>
                                                     <div className="flex gap-1">
                                                         <button onClick={() => setExpandedColorPickerShiftId(expandedColorPickerShiftId === shift.id ? null : shift.id)} className="w-6 h-6 rounded-full border border-[var(--glass-border)]" style={{ backgroundColor: shift.colorHex || '#ccc' }} />
                                                         <button onClick={() => {
-                                                            const nC = prompt('Código:', shift.code); if (nC === null) return;
-                                                            const nPC = prompt('Código Nómina:', shift.payrollCode || ''); if (nPC === null) return;
                                                             const nN = prompt('Nombre:', shift.name); if (nN === null) return;
                                                             const nS = prompt('Entrada:', shift.start); if (nS === null) return;
                                                             const nE = prompt('Salida:', shift.end); if (nE === null) return;
-                                                            updateSettings({ customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, code: nC.trim() || s.code, payrollCode: nPC.trim(), name: nN.trim() || s.name, start: nS || s.start, end: nE || s.end } : s) });
+                                                            const nPC = prompt('Código Nómina:', shift.payrollCode || ''); if (nPC === null) return;
+                                                            const nMC = prompt('Código Matriz:', shift.matrixCode || shift.code); if (nMC === null) return;
+                                                            updateSettings({ customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, name: nN.trim() || s.name, start: nS || s.start, end: nE || s.end, payrollCode: nPC.trim(), matrixCode: nMC.trim() } : s) });
                                                         }} className="p-1.5 text-blue-400 hover:bg-blue-500/10 rounded-lg"><Zap size={14} /></button>
                                                         <button onClick={() => updateSettings({ customShifts: settings.customShifts.filter(s => s.id !== shift.id) })} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg"><Trash2 size={14} /></button>
                                                     </div>
@@ -178,12 +290,34 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                 </div>
                                 <div className="pt-4 border-t border-[var(--glass-border)] space-y-3">
                                     <div className="grid grid-cols-2 gap-2">
-                                        <input placeholder="Código (Auto)" value={newShift.code} onChange={e => setNewShift({ ...newShift, code: e.target.value })} className="glass-input p-2.5 text-xs font-mono" />
-                                        <input placeholder="Cód. Nómina" value={newShift.payrollCode} onChange={e => setNewShift({ ...newShift, payrollCode: e.target.value })} className="glass-input p-2.5 text-xs font-mono" />
                                         <input placeholder="Nombre (Ej: Mañana)" value={newShift.name} onChange={e => setNewShift({ ...newShift, name: e.target.value })} className="glass-input p-2.5 text-xs col-span-2" />
+                                        <input placeholder="Código (Auto)" value={newShift.code} onChange={e => setNewShift({ ...newShift, code: e.target.value })} className={`glass-input p-2.5 text-xs font-mono transition-colors ${isMissingCode ? 'border-amber-500/50 bg-amber-500/5' : ''}`} />
+                                        <input placeholder="Cód. Nómina" value={newShift.payrollCode} onChange={e => setNewShift({ ...newShift, payrollCode: e.target.value })} className="glass-input p-2.5 text-xs font-mono" />
+                                        <input placeholder="Cód. Matriz" value={newShift.matrixCode} onChange={e => setNewShift({ ...newShift, matrixCode: e.target.value })} className="glass-input p-2.5 text-xs font-mono col-span-2" />
                                         <div className="flex flex-col gap-1"><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase px-1">Entrada</label><input type="time" value={newShift.start} onChange={e => setNewShift({ ...newShift, start: e.target.value })} className="glass-input p-2.5 text-xs" /></div>
                                         <div className="flex flex-col gap-1"><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase px-1">Salida</label><input type="time" value={newShift.end} onChange={e => setNewShift({ ...newShift, end: e.target.value })} className="glass-input p-2.5 text-xs" /></div>
                                     </div>
+
+                                    <div className="bg-[var(--glass-dock)] p-2 rounded-xl border border-[var(--glass-border)] flex items-center justify-between mt-3 mb-1">
+                                        <div className="flex items-center gap-2">
+                                            <Coffee size={14} className={hasBreak ? "text-[var(--accent-solid)]" : "text-[var(--text-tertiary)]"} />
+                                            <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase">Incluye Descanso</span>
+                                        </div>
+                                        <button onClick={() => setHasBreak(!hasBreak)} className={`text-xl transition-colors ${hasBreak ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>
+                                            {hasBreak ? <ToggleRight /> : <ToggleLeft />}
+                                        </button>
+                                    </div>
+
+                                    {isMissingCode && (
+                                        <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 animate-in fade-in slide-in-from-top-2">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <Zap size={14} className="text-amber-500" />
+                                                <span className="text-[10px] font-bold text-amber-600 uppercase">Horario no registrado</span>
+                                            </div>
+                                            <p className="text-[10px] text-amber-700/80 mb-3 leading-relaxed">Este horario no existe en la base de datos principal. Al agregarlo, se registrará en tu sistema para futuras búsquedas.</p>
+                                        </div>
+                                    )}
+
                                     <div className="flex flex-wrap gap-2 mb-3">
                                         {SHIFT_ICONS.map(icon => {
                                             const IconComp = icon.component;
@@ -211,6 +345,159 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                 </div>
                             </div>
                         </div>
+
+                        {/* CUSTOM STATUSES SECTION */}
+                        <div>
+                            <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><Shield size={14} /> Estados de Ausencia</h3>
+                            <div className="glass-panel p-5 rounded-2xl">
+                                <p className="text-xs text-[var(--text-tertiary)] mb-4">Personaliza los estados que aparecen en el modal de edición de turnos. El código se reflejará en nómina.</p>
+                                <div className="space-y-3 mb-4">
+                                    {(settings.customStatuses || []).map(status => {
+                                        const statusIcon = SHIFT_ICONS.find(i => i.id === status.icon);
+                                        const IconComp = statusIcon ? statusIcon.component : null;
+
+                                        if (editingStatusId === status.id) {
+                                            // EDITING MODE
+                                            return (
+                                                <div key={status.id} className="p-3 rounded-xl bg-[var(--glass-dock)] border border-[var(--accent-solid)] shadow-lg ring-4 ring-[var(--accent-solid)]/10 animate-in fade-in">
+                                                    <div className="grid grid-cols-[auto,1fr] items-center gap-3 mb-3">
+                                                        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${editedStatus.color}20`, color: editedStatus.color }}>
+                                                            {IconComp ? <IconComp size={16} /> : <span className="text-sm">{editedStatus.icon || '●'}</span>}
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <input name="name" value={editedStatus.name} onChange={handleStatusEditChange} placeholder="Nombre" className="glass-input p-2 text-xs col-span-2" />
+                                                            <input name="code" value={editedStatus.code} onChange={handleStatusEditChange} placeholder="Cód. Nómina" className="glass-input p-2 text-xs font-mono" maxLength={3} />
+                                                            <input name="matrixCode" value={editedStatus.matrixCode || ''} onChange={handleStatusEditChange} placeholder="Cód. Matriz" className="glass-input p-2 text-xs font-mono" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex justify-end items-center gap-2 pt-2 border-t border-[var(--glass-border)]">
+                                                        <span className="text-[10px] text-[var(--text-tertiary)] mr-auto">Editando estado...</span>
+                                                        <button onClick={cancelEditingStatus} className="px-3 py-1.5 hover:bg-[var(--glass-border)] rounded-lg text-xs font-bold text-[var(--text-secondary)] flex items-center gap-2"><X size={14} /> Cancelar</button>
+                                                        <button onClick={saveEditingStatus} className="px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 rounded-lg text-xs font-bold text-green-500 flex items-center gap-2"><Check size={14} /> Guardar</button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        } else {
+                                            // DISPLAY MODE
+                                            return (
+                                                <div key={status.id} className="p-3 rounded-xl bg-[var(--bg-body)] border border-[var(--glass-border)]">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${status.color}20`, color: status.color }}>
+                                                            {IconComp ? <IconComp size={16} /> : <span className="text-sm">{status.icon || '●'}</span>}
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="text-xs font-bold text-[var(--text-primary)]">{status.name}</span>
+                                                                <span className="text-[9px] font-mono bg-[var(--glass-dock)] px-1.5 py-0.5 rounded" title="Código en Nómina">{status.code}</span>
+                                                                <span className="text-[9px] font-mono bg-blue-500/10 text-blue-500 px-1.5 py-0.5 rounded" title="Código para Matriz">Matriz: {status.matrixCode}</span>
+                                                            </div>
+                                                            <span className="text-[9px] text-[var(--text-tertiary)]">
+                                                                {status.payrollBehavior === 'paid' ? '💰 Pagado' : status.payrollBehavior === 'halfPay' ? '½ Medio' : '⏸️ Sin pago'}
+                                                            </span>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => startEditingStatus(status)}
+                                                            className="p-1.5 hover:bg-[var(--glass-border)] rounded-lg text-[var(--text-secondary)]"
+                                                            title="Editar estado"
+                                                        >
+                                                            <Zap size={14} />
+                                                        </button>
+                                                        {!status.isDefault && (
+                                                            <button onClick={() => { if(confirm(`¿Eliminar estado "${status.name}"?`)) { updateSettings({ customStatuses: settings.customStatuses.filter(s => s.id !== status.id) }) }}} className="text-red-400 p-1 hover:bg-red-500/10 rounded-lg"><Trash2 size={14} /></button>
+                                                        )}
+                                                    </div>
+                                                    {/* Icon and Color Picker Row */}
+                                                    <div className="flex items-center gap-2 pt-2 border-t border-[var(--glass-border)]">
+                                                        <span className="text-[9px] text-[var(--text-tertiary)]">Icono:</span>
+                                                        <div className="flex gap-1 flex-wrap flex-1">
+                                                            {SHIFT_ICONS.slice(0, 8).map(icon => {
+                                                                const IC = icon.component;
+                                                                return (
+                                                                    <button
+                                                                        key={icon.id}
+                                                                        onClick={() => updateSettings({
+                                                                            customStatuses: settings.customStatuses.map(s =>
+                                                                                s.id === status.id ? { ...s, icon: icon.id } : s
+                                                                            )
+                                                                        })}
+                                                                        className={`p-1 rounded transition-all ${status.icon === icon.id ? 'bg-[var(--accent-solid)] text-white' : 'hover:bg-[var(--glass-border)] text-[var(--text-secondary)]'}`}
+                                                                        title={icon.name}
+                                                                    >
+                                                                        <IC size={12} />
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        <input
+                                                            type="color"
+                                                            value={status.color}
+                                                            onChange={(e) => updateSettings({
+                                                                customStatuses: settings.customStatuses.map(s =>
+                                                                    s.id === status.id ? { ...s, color: e.target.value } : s
+                                                                )
+                                                            })}
+                                                            className="w-6 h-6 rounded cursor-pointer border-0"
+                                                            title="Cambiar color"
+                                                        />
+                                                        <select
+                                                            value={status.payrollBehavior}
+                                                            onChange={(e) => updateSettings({
+                                                                customStatuses: settings.customStatuses.map(s =>
+                                                                    s.id === status.id ? { ...s, payrollBehavior: e.target.value } : s
+                                                                )
+                                                            })}
+                                                            className="text-[9px] bg-transparent border border-[var(--glass-border)] rounded px-1 py-0.5 outline-none"
+                                                        >
+                                                            <option value="unpaid">Sin pago</option>
+                                                            <option value="paid">Con pago</option>
+                                                            <option value="halfPay">Medio</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+                                    })}
+                                </div>
+                                <div className="pt-4 border-t border-[var(--glass-border)]">
+                                    <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase mb-2">Agregar Nuevo Estado</p>
+                                    <div className="grid grid-cols-2 gap-2 mb-3">
+                                        <input id="newStatusName" placeholder="Nombre" className="glass-input p-2 text-xs col-span-2" />
+                                        <input id="newStatusCode" placeholder="Código Nómina" className="glass-input p-2 text-xs font-mono" maxLength={3} />
+                                        <input id="newStatusMatrixCode" placeholder="Código Matriz" className="glass-input p-2 text-xs font-mono" />
+                                        <select id="newStatusPayroll" className="glass-input p-2 text-xs outline-none col-span-2">
+                                            <option value="unpaid">Sin pago</option>
+                                            <option value="paid">Con pago</option>
+                                            <option value="halfPay">Medio pago</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex gap-2 mb-3">
+                                        <input type="color" id="newStatusColor" defaultValue="#6366f1" className="w-10 h-10 rounded-lg cursor-pointer" />
+                                        <button onClick={() => {
+                                            const name = document.getElementById('newStatusName').value.trim();
+                                            const code = document.getElementById('newStatusCode').value.trim().toUpperCase();
+                                            const matrixCode = document.getElementById('newStatusMatrixCode').value.trim();
+                                            const payroll = document.getElementById('newStatusPayroll').value;
+                                            const color = document.getElementById('newStatusColor').value;
+                                            if (!name || !code || !matrixCode) return;
+                                            updateSettings({
+                                                customStatuses: [
+                                                    ...(settings.customStatuses || []),
+                                                    { id: `custom_${Date.now()}`, name, code, matrixCode, color, payrollBehavior: payroll, isDefault: false, icon: 'sun' }
+                                                ]
+                                            });
+                                            document.getElementById('newStatusName').value = '';
+                                            document.getElementById('newStatusCode').value = '';
+                                            document.getElementById('newStatusMatrixCode').value = '';
+                                            success('Estado agregado');
+                                        }} className="flex-1 bg-[var(--accent-solid)] text-white py-2 rounded-xl text-xs font-bold">
+                                            + Agregar Estado
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
                         <div>
                             <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><Zap size={14} /> Automatización</h3>
                             <div className="glass-panel p-5 rounded-2xl flex items-center justify-between">
@@ -220,6 +507,7 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                         </div>
                     </div>
                 )}
+
 
                 {activeSubTab === 'payroll' && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-8">
@@ -251,6 +539,8 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                 <div className="pt-4 border-t border-[var(--glass-border)] grid grid-cols-2 gap-4">
                                     <div><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Horas Nocturnas</label><input type="number" value={settings.payrollConfig?.nightShiftHours || 6} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, nightShiftHours: parseInt(e.target.value) || 0 } })} className="glass-input p-2 w-full text-center text-xs" /></div>
                                     <div><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Mensaje en Nómina</label><input type="text" value={settings.payrollConfig?.customMessage || ''} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, customMessage: e.target.value } })} className="glass-input p-2 w-full text-xs" placeholder="Ej: Bono..." /></div>
+                                    <div><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Inicio Recargo Noct.</label><input type="time" value={settings.payrollConfig?.nightSurchargeStart || '21:00'} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, nightSurchargeStart: e.target.value } })} className="glass-input p-2 w-full text-center text-xs" /></div>
+                                    <div><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Fin Recargo Noct.</label><input type="time" value={settings.payrollConfig?.nightSurchargeEnd || '06:00'} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, nightSurchargeEnd: e.target.value } })} className="glass-input p-2 w-full text-center text-xs" /></div>
                                 </div>
                             </div>
                         </div>
@@ -336,19 +626,7 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                             </div>
                         </div>
 
-                        <div>
-                            <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><Shield size={14} /> Seguridad</h3>
-                            <div className="glass-panel p-5 rounded-2xl space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-sm font-bold text-[var(--text-primary)]">PIN de Acceso</span>
-                                    <button onClick={() => updateSettings({ enablePin: !settings.enablePin })} className={`text-2xl transition-colors ${settings.enablePin ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>{settings.enablePin ? <ToggleRight /> : <ToggleLeft />}</button>
-                                </div>
-                                {settings.enablePin && (
-                                    <input type="number" value={settings.pin} onChange={e => e.target.value.length <= 4 && updateSettings({ pin: e.target.value })} className="glass-input p-3 w-full text-center font-mono text-xl tracking-widest bg-[var(--glass-dock)] border-dashed" placeholder="0000" />
-                                )}
-                                <button onClick={logout} className="w-full py-3.5 rounded-xl bg-red-500/10 text-red-500 font-bold text-sm border border-red-500/20 flex items-center justify-center gap-2 mt-4 transition-all hover:bg-red-500/20 active:scale-95"><LogOut size={16} /> Cerrar Sesión</button>
-                            </div>
-                        </div>
+                        <button onClick={logout} className="w-full py-3.5 rounded-xl bg-red-500/10 text-red-500 font-bold text-sm border border-red-500/20 flex items-center justify-center gap-2 mt-4 transition-all hover:bg-red-500/20 active:scale-95"><LogOut size={16} /> Cerrar Sesión</button>
                     </div>
                 )}
             </div>

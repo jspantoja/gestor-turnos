@@ -6,7 +6,7 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
     // --- Estados de Datos ---
     const [settings, setSettings] = useState({
         sedes: [{ name: 'Homecenter', places: ['Tienda', 'Patio Constructor', 'Funcionarios'] }, { name: 'Falabella', places: ['Piso 1', 'Bodega', 'Cajas'] }],
-        enablePin: true, pin: '1234', accentColor: '#000000', autoReliever: true, glassIntensity: 70, modalGlassIntensity: 70, reducedMotion: false,
+        accentColor: '#000000', autoReliever: true, glassIntensity: 70, modalGlassIntensity: 70, reducedMotion: false,
         reportConfig: { showHeader: true, showDays: true, showLocation: true, showReliever: false, showShiftSummary: true },
         payrollConfig: {
             hourlyRate: 6000, sundaySurcharge: 75, holidaySurcharge: 75, nightSurcharge: 35, nightShiftHours: 6,
@@ -14,15 +14,25 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
             hoursPerWeekday: { monday: 7, tuesday: 7.5, wednesday: 7.5, thursday: 7.5, friday: 7.5, saturday: 7, sunday: 7.33 },
             customMessage: "JUAN SEBASTIAN PANTOJA 50.000 DE COORDINACION"
         },
-        cloudMode: true, // NUEVO: Alternar entre Nube y Local
-        lastSync: null   // NUEVO: Timestamp de última sincronización
+        cloudMode: true,
+        lastSync: null,
+        // Estados de ausencia personalizables
+        customStatuses: [
+            { id: 'off', code: 'D', matrixCode: '-1', name: 'Descanso', color: '#64748b', payrollBehavior: 'unpaid', isDefault: true },
+            { id: 'sick', code: 'I', matrixCode: '-2', name: 'Incapacidad', color: '#f43f5e', payrollBehavior: 'paid', isDefault: true },
+            { id: 'permit', code: 'P', matrixCode: '-3', name: 'Permiso', color: '#8b5cf6', payrollBehavior: 'unpaid', isDefault: true },
+            { id: 'vacation', code: 'V', matrixCode: '-4', name: 'Vacaciones', color: '#0ea5e9', payrollBehavior: 'paid', isDefault: true }
+        ]
     });
+
+
     const [holidays, setHolidays] = useState(new Set());
     const [workers, setWorkers] = useState([]);
     const [shifts, setShifts] = useState({});
     const [weeklyNotes, setWeeklyNotes] = useState({});
     const [weeklyChecklists, setWeeklyChecklists] = useState({});
     const [payrollSnapshots, setPayrollSnapshots] = useState({});
+    const [payrollExclusions, setPayrollExclusions] = useState({}); // NUEVO: Exclusiones de recargos
 
     const [isSynced, setIsSynced] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -49,6 +59,7 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
                 const savedNotes = localStorage.getItem(`${prefix}weeklyNotes`);
                 const savedChecklists = localStorage.getItem(`${prefix}weeklyChecklists`);
                 const savedSnapshots = localStorage.getItem(`${prefix}payrollSnapshots`);
+                const savedExclusions = localStorage.getItem(`${prefix}payrollExclusions`);
 
                 if (savedWorkers) setWorkers(JSON.parse(savedWorkers));
                 else setWorkers([]);
@@ -171,43 +182,59 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
         } catch (e) { console.error("Save error", e); }
     };
 
-    // --- EFECTO DE GUARDADO ---
-    useEffect(() => {
-        if (isLoading || !hasInitialLoad || !appId) return;
+    // --- EFECTO DE GUARDADO (Refactorizado) ---
+    const useDebouncedSave = (data, saveAction) => {
+        useEffect(() => {
+            // No guardar si los datos iniciales aún no se han cargado
+            if (isLoading || !hasInitialLoad || !appId) return;
 
-        if (isRemoteUpdate.current) {
-            isRemoteUpdate.current = false;
-            return;
-        }
-
-        // Bloqueo si esperamos nube y no ha llegado
-        if (settings.cloudMode && !hasCloudSynced.current) return;
-
-        const saveData = setTimeout(() => {
-            const prefix = `app_${appId}_`;
-
-            // Siempre LocalStorage
-            localStorage.setItem(`${prefix}workers`, JSON.stringify(workers));
-            localStorage.setItem(`${prefix}shifts`, JSON.stringify(shifts));
-            localStorage.setItem(`${prefix}settings`, JSON.stringify(settings));
-            localStorage.setItem(`${prefix}holidays`, JSON.stringify(Array.from(holidays)));
-            localStorage.setItem(`${prefix}weeklyNotes`, JSON.stringify(weeklyNotes));
-            localStorage.setItem(`${prefix}weeklyChecklists`, JSON.stringify(weeklyChecklists));
-            localStorage.setItem(`${prefix}payrollSnapshots`, JSON.stringify(payrollSnapshots));
-
-            // Solo Cloud si está activo
-            if (settings.cloudMode) {
-                if (workers.length > 0) saveToCloud('workers_doc', { list: workers });
-                saveToCloud('shifts_doc', { data: shifts });
-                saveToCloud('settings_doc', settings);
-                saveToCloud('misc_doc', { holidays: Array.from(holidays), weeklyNotes, weeklyChecklists, payrollSnapshots });
-
-                // Actualizar timestamp localmente (para que no guarde infinito, lo hacemos con cuidado)
-                // Usamos una pequeña optimización: si solo cambió lastSync, no volvemos a guardar en nube.
+            // No guardar si esta actualización vino de la nube (evita bucles)
+            if (isRemoteUpdate.current) {
+                isRemoteUpdate.current = false;
+                return;
             }
-        }, 1000);
-        return () => clearTimeout(saveData);
-    }, [workers, shifts, weeklyNotes, weeklyChecklists, payrollSnapshots, settings, holidays, isLoading, hasInitialLoad, appId]);
+
+            // No guardar si el modo nube está activo pero la sincronización inicial no ha ocurrido
+            if (settings.cloudMode && !hasCloudSynced.current) return;
+
+            const saveData = setTimeout(() => {
+                saveAction(data);
+            }, 1000); // Retraso para agrupar cambios rápidos
+
+            return () => clearTimeout(saveData);
+        }, [data, isLoading, hasInitialLoad, appId, settings.cloudMode]); // Depende solo de los datos que guarda y el estado de carga/sincronización
+    };
+
+    const prefix = `app_${appId}_`;
+
+    // Guardar Workers
+    useDebouncedSave(workers, (data) => {
+        localStorage.setItem(`${prefix}workers`, JSON.stringify(data));
+        if (settings.cloudMode && data.length > 0) saveToCloud('workers_doc', { list: data });
+    });
+
+    // Guardar Shifts
+    useDebouncedSave(shifts, (data) => {
+        localStorage.setItem(`${prefix}shifts`, JSON.stringify(data));
+        if (settings.cloudMode) saveToCloud('shifts_doc', { data });
+    });
+
+    // Guardar Settings
+    useDebouncedSave(settings, (data) => {
+        localStorage.setItem(`${prefix}settings`, JSON.stringify(data));
+        if (settings.cloudMode) saveToCloud('settings_doc', data);
+    });
+    
+    // Guardar datos misceláneos (holidays, notes, etc. en un solo doc)
+    const miscData = { holidays: Array.from(holidays), weeklyNotes, weeklyChecklists, payrollSnapshots, payrollExclusions };
+    useDebouncedSave(miscData, (data) => {
+        localStorage.setItem(`${prefix}holidays`, JSON.stringify(data.holidays));
+        localStorage.setItem(`${prefix}weeklyNotes`, JSON.stringify(data.weeklyNotes));
+        localStorage.setItem(`${prefix}weeklyChecklists`, JSON.stringify(data.weeklyChecklists));
+        localStorage.setItem(`${prefix}payrollSnapshots`, JSON.stringify(data.payrollSnapshots));
+        localStorage.setItem(`${prefix}payrollExclusions`, JSON.stringify(data.payrollExclusions));
+        if (settings.cloudMode) saveToCloud('misc_doc', data);
+    });
 
 
     // --- HELPERS PARA RESOLUCIÓN DE CONFLICTOS ---
@@ -322,7 +349,8 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
 
     return {
         settings, updateSettings, holidays, setHolidays, workers, setWorkers, shifts, setShifts,
-        weeklyNotes, setWeeklyNotes, weeklyChecklists, setWeeklyChecklists, payrollSnapshots, setPayrollSnapshots,
+        weeklyNotes, setWeeklyNotes, weeklyChecklists, setWeeklyChecklists,
+        payrollSnapshots, setPayrollSnapshots,
         isSynced, isLoading, forceCloudUpload, forceCloudDownload, exportData, importData
     };
 };

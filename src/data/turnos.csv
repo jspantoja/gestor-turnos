@@ -1,4 +1,4 @@
-ID;Hora Entrada;Hora Entrada Máx.;Hora Salida;Horas Trabajo;Tipo descanso;Minutos descanso;Inicio descanso;Fin descanso;Estado
+ID;Hora Entrada;Hora Entrada Mï¿½x.;Hora Salida;Horas Trabajo;Tipo descanso;Minutos descanso;Inicio descanso;Fin descanso;Estado
 1;06:00;;15:00;;Horario Fijo;;12:00;13:00;Activado
 2;06:00;;14:30;;Horario Libre;60;;;Activado
 3;06:00;;12:30;;Horario Libre;30;;;Activado

@@ -245,18 +245,37 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
 
                 {/* Scrollable Content */}
                 <div className="flex-1 overflow-y-auto p-5 sm:p-6 pb-32">
-                    {/* Default shift types (off, sick, permit, vacation) */}
+                    {/* Dynamic Status Types from Settings */}
                     <div className="grid grid-cols-4 gap-2 mb-4">
-                        {Object.entries(SHIFT_TYPES).filter(([k]) => ['off', 'sick', 'permit', 'vacation', 'unassigned'].includes(k)).map(([k, cfg]) => (
-                            <button
-                                key={k}
-                                onClick={() => update({ type: k, start: '', end: '', code: null, place: currentShiftPlace, displayLocation: shift.displayLocation })}
-                                className={`p-2 rounded-xl flex flex-col items-center gap-1 border transition-all ${shift.type === k ? 'shift-btn-active ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
-                            >
-                                <div className="scale-75"><cfg.icon /></div>
-                                <span className="text-[9px] font-bold uppercase">{cfg.label}</span>
-                            </button>
-                        ))}
+                        {(settings.customStatuses || []).map(status => {
+                            const statusIcon = SHIFT_ICONS.find(i => i.id === status.icon);
+                            const IconComp = statusIcon ? statusIcon.component : null;
+                            return (
+                                <button
+                                    key={status.id}
+                                    onClick={() => update({ type: status.id, statusCode: status.code, start: '', end: '', code: null, place: currentShiftPlace, displayLocation: shift.displayLocation })}
+                                    className={`p-2 rounded-xl flex flex-col items-center gap-1 border transition-all ${shift.type === status.id ? 'ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
+                                    style={shift.type === status.id ? { backgroundColor: `${status.color}20`, borderColor: status.color, color: status.color } : {}}
+                                >
+                                    {IconComp ? (
+                                        <div className="w-5 h-5 flex items-center justify-center" style={{ color: status.color }}>
+                                            <IconComp size={16} />
+                                        </div>
+                                    ) : (
+                                        <div className="w-4 h-4 rounded-full" style={{ backgroundColor: status.color }}></div>
+                                    )}
+                                    <span className="text-[9px] font-bold uppercase">{status.name}</span>
+                                </button>
+                            );
+                        })}
+                        {/* Fallback: Sin Asignar */}
+                        <button
+                            onClick={() => update({ type: 'unassigned', start: '', end: '', code: null, place: currentShiftPlace })}
+                            className={`p-2 rounded-xl flex flex-col items-center gap-1 border transition-all ${shift.type === 'unassigned' ? 'shift-btn-active ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
+                        >
+                            <div className="scale-75"><SHIFT_TYPES.unassigned.icon /></div>
+                            <span className="text-[9px] font-bold uppercase">Sin Asignar</span>
+                        </button>
                     </div>
 
                     {/* Custom shifts from settings */}
@@ -342,7 +361,39 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                     )}
 
                     {shift.type === 'off' && (<div className="mb-6 p-3 rounded-xl border border-[var(--glass-border)] bg-white/10 flex items-center justify-between"><span className="text-xs font-bold text-[var(--text-secondary)]">👁️ Mostrar ubicación en reporte</span><div onClick={() => update({ ...shift, displayLocation: !shift.displayLocation })} className={`w-10 h-6 rounded-full flex items-center p-1 cursor-pointer transition-colors ${shift.displayLocation ? 'bg-[var(--text-primary)]' : 'bg-[var(--glass-border)]'}`}><div className={`w-4 h-4 bg-[var(--bg-body)] rounded-full shadow-md transform transition-transform ${shift.displayLocation ? 'translate-x-4' : ''}`} /></div></div>)}
-                    {(shift.type === 'morning' || shift.type === 'afternoon' || shift.type === 'night' || shift.type === 'custom') && (<div className="space-y-4 mb-6"><div className="flex gap-4"><div className="flex-1"><label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-1 block">Entrada</label><input type="time" value={shift.start || ''} onChange={e => update({ ...shift, start: e.target.value })} className="w-full glass-input p-3 rounded-lg font-mono" /></div><div className="flex-1"><label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-1 block">Salida</label><input type="time" value={shift.end || ''} onChange={e => update({ ...shift, end: e.target.value })} className="w-full glass-input p-3 rounded-lg font-mono" /></div></div><div className="p-3 rounded-xl border border-[var(--glass-border)] bg-white/10"><label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-2 block flex items-center gap-2"><MapPin size={12} /> Lugar de Trabajo ({workerSedeName})</label><div className="flex gap-2 flex-wrap">{availablePlaces.length > 0 ? availablePlaces.map(place => (<button key={place} onClick={() => update({ ...shift, place: place })} className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all flex-1 whitespace-nowrap ${currentShiftPlace === place ? 'shift-btn-active' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}>{place}</button>)) : <span className="text-xs text-[var(--text-tertiary)] italic">No hay lugares configurados en esta sede.</span>}</div></div>{worker.isReliever && (<div className="p-3 rounded-xl border border-[var(--glass-border)] bg-white/10"><label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-2 block flex items-center gap-2"><Shield size={12} /> ¿A quién está cubriendo?</label><select value={shift.coveringId || ''} onChange={(e) => update({ ...shift, coveringId: e.target.value ? parseInt(e.target.value) : null })} className="w-full glass-input p-3 rounded-lg text-sm bg-transparent outline-none appearance-none"><option value="">-- Sin relevo --</option>{workers.filter(w => w.id !== worker.id).map(w => <option key={w.id} value={w.id}>{w.name} ({w.role})</option>)}</select></div>)}</div>)}
+                    {(shift.type === 'morning' || shift.type === 'afternoon' || shift.type === 'night' || shift.type === 'custom') && (
+                        <div className="space-y-4 mb-6">
+                            <div className="flex gap-4">
+                                <div className="flex-1"><label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-1 block">Entrada</label><input type="time" value={shift.start || ''} onChange={e => update({ ...shift, start: e.target.value })} className="w-full glass-input p-3 rounded-lg font-mono" /></div>
+                                <div className="flex-1"><label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-1 block">Salida</label><input type="time" value={shift.end || ''} onChange={e => update({ ...shift, end: e.target.value })} className="w-full glass-input p-3 rounded-lg font-mono" /></div>
+                            </div>
+
+                            <div className="p-3 rounded-xl border border-[var(--glass-border)] bg-white/10">
+                                <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-2 block flex items-center gap-2"><MapPin size={12} /> Lugar de Trabajo ({workerSedeName})</label>
+                                <div className="flex gap-2 flex-wrap">{availablePlaces.length > 0 ? availablePlaces.map(place => (<button key={place} onClick={() => update({ ...shift, place: place })} className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all flex-1 whitespace-nowrap ${currentShiftPlace === place ? 'shift-btn-active' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}>{place}</button>)) : <span className="text-xs text-[var(--text-tertiary)] italic">No hay lugares configurados en esta sede.</span>}</div>
+                            </div>
+
+                            {/* TOGGLE DE RECARGOS (NUEVO) */}
+                            <div className="p-3 rounded-xl border border-[var(--glass-border)] bg-white/10 flex items-center justify-between">
+                                <div>
+                                    <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase block flex items-center gap-2"><Shield size={12} /> Recargos / Extras</label>
+                                    <p className="text-[9px] text-[var(--text-tertiary)]">Festivos, Dominicales y Nocturnas</p>
+                                </div>
+                                <button
+                                    onClick={() => update({ ...shift, excludeSurcharges: !shift.excludeSurcharges })}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${!shift.excludeSurcharges ? 'bg-green-500/20 text-green-600 border border-green-500/30' : 'bg-red-500/20 text-red-600 border border-red-500/30'}`}
+                                >
+                                    {!shift.excludeSurcharges ? (
+                                        <><span>Activos</span><div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div></>
+                                    ) : (
+                                        <><span>Excluidos</span><div className="w-2 h-2 rounded-full bg-red-500"></div></>
+                                    )}
+                                </button>
+                            </div>
+
+                            {worker.isReliever && (<div className="p-3 rounded-xl border border-[var(--glass-border)] bg-white/10"><label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-2 block flex items-center gap-2"><Shield size={12} /> ¿A quién está cubriendo?</label><select value={shift.coveringId || ''} onChange={(e) => update({ ...shift, coveringId: e.target.value ? parseInt(e.target.value) : null })} className="w-full glass-input p-3 rounded-lg text-sm bg-transparent outline-none appearance-none"><option value="">-- Sin relevo --</option>{workers.filter(w => w.id !== worker.id).map(w => <option key={w.id} value={w.id}>{w.name} ({w.role})</option>)}</select></div>)}
+                        </div>
+                    )}
                     <div className="pt-4 border-t border-[var(--glass-border)]"><Button onClick={applyToWeek} className="w-full bg-[var(--card-bg)] hover:bg-[var(--glass-border)] text-[var(--text-primary)] border-transparent"><Repeat size={16} /> Repetir toda la semana</Button><p className="text-[10px] text-[var(--text-tertiary)] mt-2 text-center">Esto aplicará el turno "{SHIFT_TYPES[shift.type || 'off'].label}" y el lugar "{currentShiftPlace}" del Lunes al Domingo de esta semana.</p></div>
                 </div>
             </div>

@@ -25,7 +25,6 @@ export const shiftSchema = z.object({
 export const settingsSchema = z.object({
     accentColor: z.string().regex(/^#([0-9A-F]{3}){1,2}$/i, "Color inválido"),
     glassIntensity: z.number().min(0).max(100),
-    pin: z.string().length(4, "El PIN debe tener 4 dígitos").regex(/^\d+$/, "El PIN solo puede contener números").optional(),
     payrollConfig: z.object({
         hourlyRate: z.number().min(0, "La tarifa no puede ser negativa"),
         transportAllowance: z.number().min(0).optional(),
