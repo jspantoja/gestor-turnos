@@ -18,6 +18,8 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
     const [hasBreak, setHasBreak] = useState(false);
     const [editingStatusId, setEditingStatusId] = useState(null);
     const [editedStatus, setEditedStatus] = useState(null);
+    const [editingShiftId, setEditingShiftId] = useState(null);
+    const [editedShift, setEditedShift] = useState(null);
 
     const startEditingStatus = (status) => {
         setEditingStatusId(status.id);
@@ -47,6 +49,40 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
     const handleStatusEditChange = (e) => {
         const { name, value } = e.target;
         setEditedStatus(prev => ({ ...prev, [name]: value }));
+    };
+
+    const startEditingShift = (shift) => {
+        setEditingShiftId(shift.id);
+        setEditedShift(shift);
+    };
+
+    const cancelEditingShift = () => {
+        setEditingShiftId(null);
+        setEditedShift(null);
+    };
+
+    const saveEditingShift = () => {
+        if (!editedShift || !editedShift.name || !editedShift.code) {
+            error("Nombre y código son requeridos.");
+            return;
+        }
+        updateSettings({
+            customShifts: settings.customShifts.map(s =>
+                s.id === editingShiftId ? { 
+                    ...editedShift, 
+                    code: editedShift.code.toUpperCase(), 
+                    matrixCode: editedShift.matrixCode || editedShift.code 
+                } : s
+            )
+        });
+        setEditingShiftId(null);
+        setEditedShift(null);
+        success('Turno actualizado');
+    };
+
+    const handleShiftEditChange = (e) => {
+        const { name, value } = e.target;
+        setEditedShift(prev => ({ ...prev, [name]: value }));
     };
 
     const validateAndUpdate = (updates) => {
@@ -89,7 +125,7 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
     };
 
     useEffect(() => {
-        if (activeSubTab !== 'management') return;
+        if (activeSubTab !== 'management' || editingShiftId !== null) return;
         const lookup = async () => {
             try {
                 // 1. Check local registrations first
@@ -135,7 +171,7 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
 
     // REVERSE LOOKUP: When user types a code, auto-fill hours
     useEffect(() => {
-        if (activeSubTab !== 'management') return;
+        if (activeSubTab !== 'management' || editingShiftId !== null) return;
         if (!newShift.code || isNaN(parseInt(newShift.code))) return;
 
         const reverseLookup = async () => {
@@ -246,42 +282,62 @@ const SettingsView = ({ user, settings, updateSettings, logout, onToggleCloud, e
                                         const IconComp = (SHIFT_ICONS.find(i => i.id === shift.icon) || SHIFT_ICONS[0]).component;
                                         return (
                                             <div key={shift.id} className="flex flex-col p-3 rounded-xl bg-[var(--bg-body)] border border-[var(--glass-border)] gap-3 shadow-sm">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="p-2 rounded-lg bg-[var(--accent-solid)]/10 text-[var(--accent-solid)]"><IconComp size={18} /></div>
-                                                        <div>
-                                                            <div className="text-sm font-bold flex items-center gap-2">{shift.name} <span className="font-mono text-[10px] bg-[var(--glass-dock)] px-1.5 py-0.5 rounded opacity-70" title="Código de Matriz">[{shift.matrixCode || shift.code}]</span></div>
-                                                            <div className="text-[10px] text-[var(--text-secondary)]">{shift.start} - {shift.end} {shift.payrollCode && `• Nómina: ${shift.payrollCode}`}</div>
+                                                {editingShiftId === shift.id ? (
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <input name="name" value={editedShift?.name || ''} onChange={handleShiftEditChange} placeholder="Nombre" className="glass-input p-2 text-xs col-span-2" />
+                                                        <input name="code" value={editedShift?.code || ''} onChange={handleShiftEditChange} placeholder="Cód. Turno" className="glass-input p-2 text-xs font-mono" maxLength={3} />
+                                                        <input name="payrollCode" value={editedShift?.payrollCode || ''} onChange={handleShiftEditChange} placeholder="Cód. Nómina" className="glass-input p-2 text-xs font-mono" maxLength={3} />
+                                                        <input name="matrixCode" value={editedShift?.matrixCode || ''} onChange={handleShiftEditChange} placeholder="Cód. Matriz" className="glass-input p-2 text-xs font-mono col-span-2" />
+                                                        <div className="flex flex-col gap-1"><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase px-1">Entrada</label><input type="time" name="start" value={editedShift?.start || '06:00'} onChange={handleShiftEditChange} className="glass-input p-2 text-xs" /></div>
+                                                        <div className="flex flex-col gap-1"><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase px-1">Salida</label><input type="time" name="end" value={editedShift?.end || '14:00'} onChange={handleShiftEditChange} className="glass-input p-2 text-xs" /></div>
+                                                        <div className="flex justify-end items-center gap-2 col-span-2 pt-2 border-t border-[var(--glass-border)]">
+                                                            <button onClick={cancelEditingShift} className="px-3 py-1.5 hover:bg-[var(--glass-border)] rounded-lg text-xs font-bold text-[var(--text-secondary)] flex items-center gap-2"><X size={14} /> Cancelar</button>
+                                                            <button onClick={saveEditingShift} className="px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 rounded-lg text-xs font-bold text-green-500 flex items-center gap-2"><Check size={14} /> Guardar</button>
                                                         </div>
                                                     </div>
-                                                    <div className="flex gap-1">
-                                                        <button onClick={() => setExpandedColorPickerShiftId(expandedColorPickerShiftId === shift.id ? null : shift.id)} className="w-6 h-6 rounded-full border border-[var(--glass-border)]" style={{ backgroundColor: shift.colorHex || '#ccc' }} />
-                                                        <button onClick={() => {
-                                                            const nN = prompt('Nombre:', shift.name); if (nN === null) return;
-                                                            const nS = prompt('Entrada:', shift.start); if (nS === null) return;
-                                                            const nE = prompt('Salida:', shift.end); if (nE === null) return;
-                                                            const nPC = prompt('Código Nómina:', shift.payrollCode || ''); if (nPC === null) return;
-                                                            const nMC = prompt('Código Matriz:', shift.matrixCode || shift.code); if (nMC === null) return;
-                                                            updateSettings({ customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, name: nN.trim() || s.name, start: nS || s.start, end: nE || s.end, payrollCode: nPC.trim(), matrixCode: nMC.trim() } : s) });
-                                                        }} className="p-1.5 text-blue-400 hover:bg-blue-500/10 rounded-lg"><Zap size={14} /></button>
-                                                        <button onClick={() => updateSettings({ customShifts: settings.customShifts.filter(s => s.id !== shift.id) })} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg"><Trash2 size={14} /></button>
+                                                ) : (
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="p-2 rounded-lg bg-[var(--accent-solid)]/10 text-[var(--accent-solid)]"><IconComp size={18} /></div>
+                                                            <div>
+                                                                <div className="text-sm font-bold flex items-center gap-2">{shift.name} <span className="font-mono text-[10px] bg-[var(--glass-dock)] px-1.5 py-0.5 rounded opacity-70" title="Código de Matriz">[{shift.matrixCode || shift.code}]</span></div>
+                                                                <div className="text-[10px] text-[var(--text-secondary)]">{shift.start} - {shift.end} {shift.payrollCode && `• Nómina: ${shift.payrollCode}`}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-1">
+                                                            <button onClick={() => setExpandedColorPickerShiftId(expandedColorPickerShiftId === shift.id ? null : shift.id)} className="w-6 h-6 rounded-full border border-[var(--glass-border)]" style={{ backgroundColor: shift.colorHex || '#ccc' }} />
+                                                            <button onClick={() => startEditingShift(shift)} className="p-1.5 text-blue-400 hover:bg-blue-500/10 rounded-lg"><Zap size={14} /></button>
+                                                            <button onClick={() => updateSettings({ customShifts: settings.customShifts.filter(s => s.id !== shift.id) })} className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-lg"><Trash2 size={14} /></button>
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                )}
                                                 <div className="flex gap-1 pt-2 border-t border-[var(--glass-border)] border-dashed">
                                                     {['D', 'L', 'M', 'X', 'J', 'V', 'S'].map((d, i) => {
-                                                        const isAllowed = !shift.allowedDays || shift.allowedDays.includes(i);
+                                                        const isAllowed = (editingShiftId === shift.id ? editedShift?.allowedDays : shift.allowedDays)?.includes(i);
                                                         return (
                                                             <button key={i} onClick={() => {
-                                                                const cur = shift.allowedDays || [0, 1, 2, 3, 4, 5, 6];
-                                                                const next = cur.includes(i) ? cur.filter(x => x !== i) : [...cur, i];
-                                                                updateSettings({ customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, allowedDays: next } : s) });
+                                                                const currentAllowedDays = (editingShiftId === shift.id ? editedShift?.allowedDays : shift.allowedDays) || [0, 1, 2, 3, 4, 5, 6];
+                                                                const nextAllowedDays = currentAllowedDays.includes(i) ? currentAllowedDays.filter(x => x !== i) : [...currentAllowedDays, i];
+
+                                                                if (editingShiftId === shift.id) {
+                                                                    setEditedShift(prev => ({ ...prev, allowedDays: nextAllowedDays }));
+                                                                } else {
+                                                                    updateSettings({ customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, allowedDays: nextAllowedDays } : s) });
+                                                                }
                                                             }} className={`w-6 h-6 rounded flex items-center justify-center text-[9px] font-bold ${isAllowed ? 'bg-[var(--accent-solid)] text-white' : 'bg-gray-100/50 text-gray-400'}`}>{d}</button>
                                                         );
                                                     })}
                                                 </div>
                                                 {expandedColorPickerShiftId === shift.id && (
                                                     <div className="pt-2 grid grid-cols-5 gap-2 animate-in fade-in zoom-in-95">
-                                                        {SHIFT_COLORS.map(c => (<button key={c.id} onClick={() => { updateSettings({ customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, color: c.id, colorHex: c.hex } : s) }); setExpandedColorPickerShiftId(null); }} className="w-full aspect-square rounded-lg border-2 border-transparent" style={{ backgroundColor: c.hex }} />))}
+                                                        {SHIFT_COLORS.map(c => (<button key={c.id} onClick={() => {
+                                                            if (editingShiftId === shift.id) {
+                                                                setEditedShift(prev => ({ ...prev, color: c.id, colorHex: c.hex }));
+                                                            } else {
+                                                                updateSettings({ customShifts: settings.customShifts.map(s => s.id === shift.id ? { ...s, color: c.id, colorHex: c.hex } : s) });
+                                                            }
+                                                            setExpandedColorPickerShiftId(null);
+                                                        }} className="w-full aspect-square rounded-lg border-2 border-transparent" style={{ backgroundColor: c.hex }} />))}
                                                     </div>
                                                 )}
                                             </div>
