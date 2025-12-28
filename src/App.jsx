@@ -16,6 +16,7 @@ import { ToastProvider, useToast } from './components/shared/Toast';
 import { useAuth } from './hooks/useAuth';
 import { useDataSync } from './hooks/useDataSync';
 import { useSchedule } from './hooks/useSchedule';
+import { useStorageManager } from './hooks/useStorageManager';
 import ErrorBoundary from './components/shared/ErrorBoundary';
 
 // --- LAZY LOADED COMPONENTS (Less frequently accessed views) ---
@@ -48,6 +49,7 @@ const App = () => {
         weeklyNotes, setWeeklyNotes,
         weeklyChecklists, setWeeklyChecklists,
         payrollSnapshots, setPayrollSnapshots,
+        calendarEvents, setCalendarEvents,
         isSynced, isLoading: dataLoading,
         forceCloudUpload, forceCloudDownload, exportData, importData
     } = useDataSync({ user, auth, db, appId: dynamicAppId, firebaseReady });
@@ -58,6 +60,9 @@ const App = () => {
         currentDate, setCurrentDate,
         daysToShow, navigate
     } = useSchedule();
+
+    // --- Backup Reminder Hook ---
+    const storageManager = useStorageManager();
 
     const [isLocked, setIsLocked] = useState(settings.enablePin);
 
@@ -202,7 +207,7 @@ const App = () => {
         <ToastProvider>
             <GlobalStyles accentColor={settings.accentColor} glassIntensity={settings.glassIntensity} reducedMotion={settings.reducedMotion} settings={settings} />
             <div className="flex flex-col h-screen w-screen overflow-hidden" data-theme={theme}>
-                <div className="flex flex-col h-full w-full max-w-[1400px] mx-auto relative">
+                <div className="flex flex-col h-full w-full mx-auto relative">
                     <div className="blob-cont"><div className="blob" style={{ top: '-10%', left: '-10%', width: '50vw', height: '50vw', background: 'rgba(120,120,120,0.1)' }} /></div>
 
                     {selectedWorkerId ? (
@@ -211,10 +216,10 @@ const App = () => {
                         </ErrorBoundary>
                     ) : (
                         <ErrorBoundary>
-                            {activeTab === 'schedule' && <ScheduleView theme={theme} toggleTheme={toggleTheme} viewMode={viewMode} setViewMode={setViewMode} currentDate={currentDate} navigate={navigate} daysToShow={daysToShow} workers={workers} shifts={shifts} setSelectedCell={setSelectedCell} setSelectedDayDetail={setSelectedDayDetail} isSynced={isSynced && settings.cloudMode} settings={settings} />}
+                            {activeTab === 'schedule' && <ScheduleView theme={theme} toggleTheme={toggleTheme} viewMode={viewMode} setViewMode={setViewMode} currentDate={currentDate} navigate={navigate} daysToShow={daysToShow} workers={workers} shifts={shifts} setSelectedCell={setSelectedCell} setSelectedDayDetail={setSelectedDayDetail} isSynced={isSynced && settings.cloudMode} settings={settings} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} />}
                             {activeTab === 'rest_days' && (
                                 <Suspense fallback={<SkeletonPage />}>
-                                    <RestDaysView currentDate={currentDate} setCurrentDate={setCurrentDate} workers={activeWorkers} shifts={shifts} setShifts={setShifts} weeklyNotes={weeklyNotes} setWeeklyNotes={setWeeklyNotes} weeklyChecklists={weeklyChecklists} setWeeklyChecklists={setWeeklyChecklists} settings={settings} />
+                                    <RestDaysView currentDate={currentDate} setCurrentDate={setCurrentDate} workers={activeWorkers} shifts={shifts} setShifts={setShifts} weeklyNotes={weeklyNotes} setWeeklyNotes={setWeeklyNotes} weeklyChecklists={weeklyChecklists} setWeeklyChecklists={setWeeklyChecklists} settings={settings} updateSettings={updateSettings} />
                                 </Suspense>
                             )}
                             {activeTab === 'report' && (
@@ -233,6 +238,11 @@ const App = () => {
                                         onToggleCloud={handleToggleCloud}
                                         exportData={exportData}
                                         importData={importData}
+                                        // Backup reminder props
+                                        showBackupReminder={storageManager.showBackupReminder}
+                                        onDismissBackupReminder={storageManager.dismissBackupReminder}
+                                        daysSinceLastBackup={storageManager.daysSinceLastBackup}
+                                        onRecordBackup={storageManager.recordBackup}
                                     />
                                 </Suspense>
                             )}

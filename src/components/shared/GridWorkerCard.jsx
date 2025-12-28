@@ -8,20 +8,34 @@ const GridWorkerCard = ({ worker, shift, onClick, settings }) => {
     // For custom shifts, use the stored code; otherwise use type.code
     const displayCode = shift.type === 'custom' && shift.code ? shift.code : type.code;
 
-    // Get custom shift color if available
-    let customColor = shift.type === 'custom' && shift.customShiftColor
-        ? SHIFT_COLORS.find(c => c.id === shift.customShiftColor)
-        : null;
+    // Enhanced Color Logic: Prioritize Settings over Stored Snapshot
+    let customColor = null;
 
-    // Enhanced Color Logic Fallback
-    if (!customColor && shift.type === 'custom' && settings?.customShifts) {
-        const def = settings.customShifts.find(cs =>
-            (shift.customShiftId && cs.id === shift.customShiftId) ||
-            (shift.code && cs.code === shift.code) ||
-            (shift.customShiftName && cs.name === shift.customShiftName)
-        );
-        if (def && def.color) {
-            customColor = SHIFT_COLORS.find(c => c.id === def.color);
+    if (shift.type === 'custom') {
+        // 1. Try to find definition in current settings
+        if (settings?.customShifts) {
+            const def = settings.customShifts.find(cs =>
+                (shift.customShiftId && cs.id === shift.customShiftId) ||
+                (shift.code && cs.code === shift.code) ||
+                (shift.customShiftName && cs.name === shift.customShiftName)
+            );
+            if (def) {
+                if (def.color) customColor = SHIFT_COLORS.find(c => c.id === def.color);
+
+                // If not found in presets, check for direct hex
+                if (!customColor && def.colorHex) {
+                    customColor = {
+                        bg: 'bg-white/10',
+                        text: 'text-white',
+                        border: '',
+                        hex: def.colorHex
+                    };
+                }
+            }
+        }
+        // 2. Fallback to stored snapshot
+        if (!customColor && shift.customShiftColor) {
+            customColor = SHIFT_COLORS.find(c => c.id === shift.customShiftColor);
         }
     }
     const shiftStyle = customColor
@@ -46,7 +60,10 @@ const GridWorkerCard = ({ worker, shift, onClick, settings }) => {
             <span className="text-[10px] font-bold text-[var(--text-primary)] text-center truncate w-full px-1 leading-tight">
                 {firstName}
             </span>
-            <div className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${shiftStyle} flex-shrink-0`}>
+            <div
+                className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${!customColor?.hex ? shiftStyle : ''} flex-shrink-0`}
+                style={customColor?.hex ? { backgroundColor: `${customColor.hex}33`, color: customColor.hex, border: `1px solid ${customColor.hex}40` } : {}}
+            >
                 {displayCode}
             </div>
         </div>

@@ -2,9 +2,9 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Coffee, ChevronLeft, ChevronRight, Trash2, Eye, EyeOff, Share2, CheckSquare, Shield, Plus } from 'lucide-react';
 import SectionHeader from '../shared/SectionHeader';
 import { toLocalISOString, addDays, isToday, getShift, getWorkerDisplayName } from '../../utils/helpers';
-import { SHIFT_TYPES } from '../../config/constants';
+import MessageTemplateModal from '../modals/MessageTemplateModal';
 
-const RestDaysView = ({ workers, shifts, currentDate, setShifts, setCurrentDate, weeklyNotes, setWeeklyNotes, weeklyChecklists, setWeeklyChecklists, settings }) => {
+const RestDaysView = ({ workers, shifts, currentDate, setShifts, setCurrentDate, weeklyNotes, setWeeklyNotes, weeklyChecklists, setWeeklyChecklists, settings, updateSettings }) => {
     const [viewDetail, setViewDetail] = useState('simple');
     const [showCovering, setShowCovering] = useState(true);
     const [newItemText, setNewItemText] = useState('');
@@ -59,95 +59,37 @@ const RestDaysView = ({ workers, shifts, currentDate, setShifts, setCurrentDate,
     const totalCount = currentChecklist.length;
     const progress = totalCount === 0 ? 0 : (completedCount / totalCount) * 100;
 
-    const handleShare = () => {
-        const startDay = weekDays[0].getDate();
-        const endDay = weekDays[6].getDate();
-        const monthName = weekDays[0].toLocaleDateString('es-ES', { month: 'long' });
+    // --- Message Template Modal State ---
+    const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+    const [templateVariables, setTemplateVariables] = useState({});
 
-        const cfg = settings.reportConfig || { showHeader: true, showDays: true, showLocation: true, showReliever: false, showShiftSummary: true };
-        const defaultSede = settings.sedes[0]?.name || 'Homecenter';
-
-        let report = '';
-        if (cfg.showHeader) {
-            report += `Descansos del ${startDay} al ${endDay} de ${monthName} \n`;
-        }
-
-        weekDays.forEach(date => {
-            const dateStr = toLocalISOString(date);
-            const rests = workers.filter(w => getShift(shifts, w.id, dateStr).type === 'off');
-
-            if (rests.length > 0) {
-                rests.forEach(w => {
-                    let line = '';
-                    if (cfg.showDays) {
-                        const dayName = date.toLocaleDateString('es-ES', { weekday: 'long' });
-                        const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
-                        line += `${capitalizedDay} `;
-                    } else {
-                        line += `• `;
-                    }
-
-                    line += cfg.useShortName ? getWorkerDisplayName(w) : w.name;
-
-                    if (cfg.showLocation) {
-                        if (w.sede && w.sede !== defaultSede) {
-                            line += ` (${w.sede})`;
-                        }
-                    }
-
-                    if (cfg.showReliever) {
-                        const reliever = workers.find(r => {
-                            const s = getShift(shifts, r.id, dateStr);
-                            return s.coveringId === w.id;
-                        });
-                        if (reliever) {
-                            line += ` [Cubre: ${cfg.useShortName ? reliever.name.split(' ')[0] : reliever.name}]`;
-                        }
-                    }
-
-                    report += `${line} \n`;
-                });
-            }
-        });
-
-        if (cfg.showShiftSummary) {
-            report += `\nLos turnos de esta semana quedan de la siguiente manera: \n`;
-
-            const summary = { morning: {}, afternoon: {}, night: {} };
-
-            weekDays.forEach(date => {
-                const dateStr = toLocalISOString(date);
-                workers.forEach(w => {
-                    const shift = getShift(shifts, w.id, dateStr);
-                    if (shift.type === 'morning' || shift.type === 'afternoon' || shift.type === 'night') {
-                        if (!summary[shift.type][w.id]) {
-                            summary[shift.type][w.id] = { name: getWorkerDisplayName(w), places: [] };
-                        }
-                        if (shift.place) {
-                            summary[shift.type][w.id].places.push(shift.place);
-                        }
-                    }
-                });
-            });
-
-            ['morning', 'afternoon', 'night'].forEach(shiftType => {
-                const label = shiftType === 'morning' ? 'Mañana' : shiftType === 'afternoon' ? 'Tarde' : 'Noche';
-                const people = Object.values(summary[shiftType]).filter(p => p.places.length > 0);
-                if (people.length > 0) {
-                    report += `\n${label}: \n`;
-                    people.forEach(p => {
-                        const uniquePlaces = [...new Set(p.places)];
-                        report += `  ${p.name}: ${uniquePlaces.join(', ')} \n`;
-                    });
-                }
-            });
-        }
-
-        // Agregar progreso del checklist al final
-        report += `\n📋 Checklist Operativo: ${Math.round(progress)}% Completado`;
-
-        navigator.clipboard.writeText(report).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    const handleOpenShareModal = () => {
+        setIsTemplateModalOpen(true);
     };
+
+    const handleSaveTemplate = (newTemplate, newConfig) => {
+        if (updateSettings) {
+            updateSettings({
+                messageTemplate: newTemplate,
+                reportConfig: newConfig
+            });
+            alert("Configuración y plantilla guardadas correctamente.");
+        } else {
+            console.error("updateSettings not available");
+            alert("Error: No se pudo guardar.");
+        }
+    };
+
+    const handleLinkCopy = (finalText) => {
+        navigator.clipboard.writeText(finalText).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+            setIsTemplateModalOpen(false);
+        });
+    };
+
+
+
 
     // 2. se REEMPLAZA ESTA FUNCIÓN COMPLETA
     const handleClearWeek = () => {
@@ -179,7 +121,7 @@ const RestDaysView = ({ workers, shifts, currentDate, setShifts, setCurrentDate,
         <div className="flex flex-col h-full animate-enter bg-[var(--bg-body)]">
             <div className="px-6 py-8 flex flex-col gap-4 border-b border-[var(--glass-border)] bg-[var(--bg-body)] z-40 sticky top-0">
                 <div className="relative flex items-center justify-center"><SectionHeader icon={Coffee}>Descansos & Relevos</SectionHeader><div className="absolute right-0 flex gap-2"><button onClick={() => { const d = new Date(currentDate); d.setDate(d.getDate() - 7); setCurrentDate(d); }} className="p-2 rounded-full bg-[var(--glass-dock)] border border-[var(--glass-border)]"><ChevronLeft size={16} /></button><button onClick={() => { const d = new Date(currentDate); d.setDate(d.getDate() + 7); setCurrentDate(d); }} className="p-2 rounded-full bg-[var(--glass-dock)] border border-[var(--glass-border)]"><ChevronRight size={16} /></button></div></div>
-                <div className="flex flex-wrap items-center justify-between gap-2 bg-[var(--card-bg)] p-1.5 rounded-2xl border border-[var(--glass-border)]"><div className="flex bg-[var(--input-bg)] rounded-xl p-1"><button onClick={() => setViewDetail('simple')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewDetail === 'simple' ? 'bg-[var(--accent-solid)] text-[var(--accent-text)] shadow-md' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>Solo Descansos</button><button onClick={() => setViewDetail('expanded')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewDetail === 'expanded' ? 'bg-[var(--accent-solid)] text-[var(--accent-text)] shadow-md' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>Agenda Completa</button></div><div className="flex gap-2"><button onClick={handleClearWeek} className="p-2 rounded-xl border border-[var(--glass-border)] bg-transparent text-red-500 hover:bg-red-500 hover:text-white transition-colors" title="Borrar Semana"><Trash2 size={16} /></button><button onClick={() => setShowCovering(!showCovering)} className={`p-2 rounded-xl border transition-colors ${showCovering ? 'bg-[var(--text-primary)] text-[var(--bg-body)] border-transparent' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)]'}`} title={showCovering ? "Ocultar Relevos" : "Mostrar Relevos"}>{showCovering ? <Eye size={16} /> : <EyeOff size={16} />}</button><button onClick={handleShare} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${copied ? 'bg-green-500 text-white border-transparent' : 'bg-[var(--accent-solid)] text-[var(--accent-text)] border-transparent'}`}>{copied ? <CheckSquare size={14} /> : <Share2 size={14} />}{copied ? '¡Copiado!' : 'Copiar'}</button></div></div>
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-[var(--card-bg)] p-1.5 rounded-2xl border border-[var(--glass-border)]"><div className="flex bg-[var(--input-bg)] rounded-xl p-1"><button onClick={() => setViewDetail('simple')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewDetail === 'simple' ? 'bg-[var(--accent-solid)] text-[var(--accent-text)] shadow-md' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>Solo Descansos</button><button onClick={() => setViewDetail('expanded')} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewDetail === 'expanded' ? 'bg-[var(--accent-solid)] text-[var(--accent-text)] shadow-md' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>Agenda Completa</button></div><div className="flex gap-2"><button onClick={handleClearWeek} className="p-2 rounded-xl border border-[var(--glass-border)] bg-transparent text-red-500 hover:bg-red-500 hover:text-white transition-colors" title="Borrar Semana"><Trash2 size={16} /></button><button onClick={() => setShowCovering(!showCovering)} className={`p-2 rounded-xl border transition-colors ${showCovering ? 'bg-[var(--text-primary)] text-[var(--bg-body)] border-transparent' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)]'}`} title={showCovering ? "Ocultar Relevos" : "Mostrar Relevos"}>{showCovering ? <Eye size={16} /> : <EyeOff size={16} />}</button><button onClick={handleOpenShareModal} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${copied ? 'bg-green-500 text-white border-transparent' : 'bg-[var(--accent-solid)] text-[var(--accent-text)] border-transparent'}`}>{copied ? <CheckSquare size={14} /> : <Share2 size={14} />}{copied ? '¡Copiado!' : 'Copiar'}</button></div></div>
                 <p className="text-xs text-[var(--text-secondary)] text-center">Semana del {startLabel} al {endLabel}</p>
             </div>
             <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-32 pt-6">
@@ -290,6 +232,21 @@ const RestDaysView = ({ workers, shifts, currentDate, setShifts, setCurrentDate,
                     </div>
                 </div>
             </div>
+
+            <MessageTemplateModal
+                isOpen={isTemplateModalOpen}
+                onClose={() => setIsTemplateModalOpen(false)}
+                initialTemplate={settings.messageTemplate || "Descansos: {{titulo}}\n\n{{lista_descansos}}\n\n{{resumen_turnos}}\n\n{{checklist}}"}
+                initialConfig={settings.reportConfig}
+                contextData={{
+                    weekDays,
+                    workers,
+                    shifts,
+                    progress,
+                    defaultSede: settings.sedes[0]?.name || 'Homecenter'
+                }}
+                onSave={handleSaveTemplate}
+            />
         </div>
     );
 };

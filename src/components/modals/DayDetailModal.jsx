@@ -57,19 +57,23 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings }) => {
                                 // Use custom shift name if available, otherwise type label
                                 const displayLabel = isCustom && w.shift.customShiftName ? w.shift.customShiftName : typeConfig.label;
 
-                                // Enhanced Color Logic: Try direct property first, then fallback to settings lookup
-                                let customColor = isCustom && w.shift.customShiftColor
-                                    ? SHIFT_COLORS.find(c => c.id === w.shift.customShiftColor)
-                                    : null;
-
-                                if (!customColor && isCustom && settings?.customShifts) {
-                                    const def = settings.customShifts.find(cs =>
-                                        (w.shift.customShiftId && cs.id === w.shift.customShiftId) ||
-                                        (w.shift.code && cs.code === w.shift.code) ||
-                                        (w.shift.customShiftName && cs.name === w.shift.customShiftName)
-                                    );
-                                    if (def && def.color) {
-                                        customColor = SHIFT_COLORS.find(c => c.id === def.color);
+                                // Enhanced Color Logic: Priority to Settings
+                                let customColor = null;
+                                if (isCustom) {
+                                    // 1. Try Settings
+                                    if (settings?.customShifts) {
+                                        const def = settings.customShifts.find(cs =>
+                                            (w.shift.customShiftId && cs.id === w.shift.customShiftId) ||
+                                            (w.shift.code && cs.code === w.shift.code) ||
+                                            (w.shift.customShiftName && cs.name === w.shift.customShiftName)
+                                        );
+                                        if (def && def.color) {
+                                            customColor = SHIFT_COLORS.find(c => c.id === def.color);
+                                        }
+                                    }
+                                    // 2. Fallback to Stored
+                                    if (!customColor && w.shift.customShiftColor) {
+                                        customColor = SHIFT_COLORS.find(c => c.id === w.shift.customShiftColor);
                                     }
                                 }
 

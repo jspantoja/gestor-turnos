@@ -410,7 +410,7 @@ const PayrollRow = ({ worker, daysToShow, shifts, holidays, setSelectedCell, sta
     return (
         <tr className="group transition-colors hover:bg-gray-50/50">
             {/* Columna Nombre Sticky */}
-            <td className="report-sticky-col p-3 border-b border-[var(--glass-border)] text-sm font-medium text-[var(--text-primary)] truncate max-w-[200px] bg-[var(--bg-body)] z-10">
+            <td className="report-sticky-col p-3 border-b border-[var(--glass-border)] text-sm font-medium text-[var(--text-primary)] truncate max-w-[300px] bg-[var(--bg-body)] z-10">
                 <div className="flex items-center gap-2 truncate">
                     <span>{worker.name}</span>
                     {worker.isReliever && <span className="reliever-tag px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700 font-bold">Relevo</span>}
@@ -431,10 +431,14 @@ const PayrollRow = ({ worker, daysToShow, shifts, holidays, setSelectedCell, sta
                     : null;
                 const displayCode = customShiftDef?.payrollCode || (s.type === 'custom' && s.code ? s.code : type.code);
 
-                // Get custom shift color if available
-                const customColor = s.type === 'custom' && s.customShiftColor
-                    ? SHIFT_COLORS.find(c => c.id === s.customShiftColor)
-                    : null;
+                // Get custom shift color if available (Priority to Settings Definition)
+                let customColor = null;
+                if (customShiftDef?.color) {
+                    customColor = SHIFT_COLORS.find(c => c.id === customShiftDef.color);
+                }
+                if (!customColor && s.type === 'custom' && s.customShiftColor) {
+                    customColor = SHIFT_COLORS.find(c => c.id === s.customShiftColor);
+                }
 
                 // LÓGICA DE COLOR ROJO:
                 // Si es domingo o festivo, forzamos fondo rojo suave y texto rojo
@@ -573,7 +577,7 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
                         style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--glass-border) transparent' }}
                     >
                         <div className="glass-panel rounded-xl overflow-hidden shadow-sm border border-[var(--glass-border)] min-w-max">
-                            <table className="report-table w-full"><thead><tr><th className="report-header-cell report-sticky-col p-3 min-w-[200px] text-left text-xs font-bold text-[var(--text-secondary)] uppercase">Nombres</th>{daysToShow.map(d => { const isSun = d.date.getDay() === 0; const dateStr = toLocalISOString(d.date); const isHol = holidays.has(dateStr); return (<th key={dateStr} className={`report-header-cell text-center p-1 min-w-[40px] cursor-pointer hover:bg-[var(--glass-border)] transition-colors ${(isSun || isHol) ? 'holiday-bg' : ''}`} onClick={() => toggleHoliday(dateStr)}><div className={`text-[10px] font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-secondary)]'}`}>{d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}</div><div className={`text-sm font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-primary)]'}`}>{d.date.getDate()}</div></th>) })}<th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DOM<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">FEST<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">H.<br />NOCT</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DÍAS<br />REC</th></tr></thead>
+                            <table className="report-table w-full"><thead><tr><th className="report-header-cell report-sticky-col p-3 min-w-[300px] text-left text-xs font-bold text-[var(--text-secondary)] uppercase">Nombres</th>{daysToShow.map(d => { const isSun = d.date.getDay() === 0; const dateStr = toLocalISOString(d.date); const isHol = holidays.has(dateStr); return (<th key={dateStr} className={`report-header-cell text-center p-1 min-w-[40px] cursor-pointer hover:bg-[var(--glass-border)] transition-colors ${(isSun || isHol) ? 'holiday-bg' : ''}`} onClick={() => toggleHoliday(dateStr)}><div className={`text-[10px] font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-secondary)]'}`}>{d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}</div><div className={`text-sm font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-primary)]'}`}>{d.date.getDate()}</div></th>) })}<th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DOM<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">FEST<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">H.<br />NOCT</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DÍAS<br />REC</th></tr></thead>
                                 <tbody>
                                     {Object.entries(groupedWorkers).map(([sedeName, group]) => (
                                         <React.Fragment key={sedeName}>

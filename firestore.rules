@@ -1,12 +1,46 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow read/write access to all documents under 'artifacts' ONLY if the user is authenticated
-    match /artifacts/{appId}/public/data/{document=**} {
-      allow read, write: if request.auth != null;
+    
+    // ========================================
+    // REGLAS PARA GESTOR DE TURNOS
+    // ========================================
+    
+    // Función auxiliar: verificar que el usuario está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
     }
     
-    // Default deny for everything else
+    // Función auxiliar: verificar que el email está verificado (opcional pero recomendado)
+    function hasVerifiedEmail() {
+      return request.auth.token.email_verified == true;
+    }
+    
+    // Función auxiliar: limitar tamaño de documentos (prevenir abuso)
+    function isValidDocumentSize() {
+      return request.resource.data.size() < 100; // máximo 100 campos por documento
+    }
+    
+    // ========================================
+    // DATOS DE LA APLICACIÓN
+    // ========================================
+    // Ruta: /artifacts/{appId}/public/data/{collection}/{docId}
+    
+    match /artifacts/{appId}/public/data/{collection}/{docId} {
+      // LECTURA: Solo usuarios autenticados
+      allow read: if isAuthenticated();
+      
+      // ESCRITURA: Usuario autenticado + validaciones adicionales
+      allow write: if isAuthenticated()
+                   && isValidDocumentSize();
+    }
+    
+    // ========================================
+    // REGLA POR DEFECTO: DENEGAR TODO
+    // ========================================
+    // Cualquier ruta no especificada arriba será denegada
+    
     match /{document=**} {
       allow read, write: if false;
     }

@@ -1,0 +1,38 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_1_2)">
+<rect x="56" y="56" width="400" height="400" rx="100" fill="url(#paint0_linear_1_2)"/>
+<path d="M56 156C56 156 156 180 256 156C356 132 456 156 456 156L456 456H56L56 156Z" fill="white" fill-opacity="0.2"/>
+<rect x="56" y="56" width="400" height="400" rx="100" stroke="url(#paint1_linear_1_2)" stroke-width="12" stroke-opacity="0.6"/>
+<g filter="url(#filter0_b_1_2)">
+<circle cx="256" cy="256" r="120" fill="url(#paint2_linear_1_2)" fill-opacity="0.2" stroke="url(#paint3_linear_1_2)" stroke-width="16"/>
+</g>
+<path d="M256 320C256 320 276 300 296 280L336 240L320 224L296 248L276 268L256 288L236 268L196 228L180 244L256 320Z" fill="white"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_1_2" x1="256" y1="56" x2="256" y2="456" gradientUnits="userSpaceOnUse">
+<stop stop-color="#4B88E1"/>
+<stop offset="1" stop-color="#E14B4B"/>
+</linearGradient>
+<linearGradient id="paint1_linear_1_2" x1="56" y1="56" x2="456" y2="456" gradientUnits="userSpaceOnUse">
+<stop stop-color="white" stop-opacity="0.8"/>
+<stop offset="1" stop-color="white" stop-opacity="0"/>
+</linearGradient>
+<linearGradient id="paint2_linear_1_2" x1="136" y1="136" x2="376" y2="376" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="white" stop-opacity="0"/>
+</linearGradient>
+<linearGradient id="paint3_linear_1_2" x1="256" y1="136" x2="256" y2="376" gradientUnits="userSpaceOnUse">
+<stop stop-color="white" stop-opacity="0.8"/>
+<stop offset="1" stop-color="white" stop-opacity="0.2"/>
+</linearGradient>
+<filter id="filter0_b_1_2" x="128" y="128" width="256" height="256" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feGaussianBlur in="BackgroundImageFix" stdDeviation="8"/>
+<feComposite in2="SourceAlpha" operator="in" result="effect1_backgroundBlur_1_2"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_backgroundBlur_1_2" result="shape"/>
+</filter>
+<clipPath id="clip0_1_2">
+<rect width="512" height="512" fill="white"/>
+</clipPath>
+</defs>
+</svg>

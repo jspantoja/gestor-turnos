@@ -22,7 +22,8 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
             { id: 'sick', code: 'I', matrixCode: '-2', name: 'Incapacidad', color: '#f43f5e', payrollBehavior: 'paid', isDefault: true },
             { id: 'permit', code: 'P', matrixCode: '-3', name: 'Permiso', color: '#8b5cf6', payrollBehavior: 'unpaid', isDefault: true },
             { id: 'vacation', code: 'V', matrixCode: '-4', name: 'Vacaciones', color: '#0ea5e9', payrollBehavior: 'paid', isDefault: true }
-        ]
+        ],
+        messageTemplate: "Descansos: {{titulo}}\n\n{{lista_descansos}}\n\n{{checklist}}"
     });
 
 
@@ -33,6 +34,8 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
     const [weeklyChecklists, setWeeklyChecklists] = useState({});
     const [payrollSnapshots, setPayrollSnapshots] = useState({});
     const [payrollExclusions, setPayrollExclusions] = useState({}); // NUEVO: Exclusiones de recargos
+    const [calendarEvents, setCalendarEvents] = useState({}); // NUEVO: Eventos calendario
+
 
     const [isSynced, setIsSynced] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -60,6 +63,8 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
                 const savedChecklists = localStorage.getItem(`${prefix}weeklyChecklists`);
                 const savedSnapshots = localStorage.getItem(`${prefix}payrollSnapshots`);
                 const savedExclusions = localStorage.getItem(`${prefix}payrollExclusions`);
+                const savedEvents = localStorage.getItem(`${prefix}calendarEvents`);
+
 
                 if (savedWorkers) setWorkers(JSON.parse(savedWorkers));
                 else setWorkers([]);
@@ -75,9 +80,13 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
                 if (savedHolidays) setHolidays(new Set(JSON.parse(savedHolidays)));
                 if (savedNotes) setWeeklyNotes(JSON.parse(savedNotes));
                 if (savedChecklists) setWeeklyChecklists(JSON.parse(savedChecklists));
+
                 if (savedSnapshots) setPayrollSnapshots(JSON.parse(savedSnapshots));
+                if (savedEvents) setCalendarEvents(JSON.parse(savedEvents));
 
                 setIsLoading(false);
+
+
                 setHasInitialLoad(true);
             } catch (e) {
                 console.error('Error loading local data:', e);
@@ -146,8 +155,9 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
                     const d = snap.data();
                     if (d.holidays && d.holidays.length > 0) setHolidays(new Set(d.holidays));
                     if (d.weeklyNotes) setWeeklyNotes(d.weeklyNotes);
-                    if (d.weeklyChecklists) setWeeklyChecklists(d.weeklyChecklists);
+
                     if (d.payrollSnapshots) setPayrollSnapshots(d.payrollSnapshots);
+                    if (d.calendarEvents) setCalendarEvents(d.calendarEvents);
                 });
             }
         });
@@ -224,16 +234,20 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
         localStorage.setItem(`${prefix}settings`, JSON.stringify(data));
         if (settings.cloudMode) saveToCloud('settings_doc', data);
     });
-    
+
     // Guardar datos misceláneos (holidays, notes, etc. en un solo doc)
-    const miscData = { holidays: Array.from(holidays), weeklyNotes, weeklyChecklists, payrollSnapshots, payrollExclusions };
+    const miscData = { holidays: Array.from(holidays), weeklyNotes, weeklyChecklists, payrollSnapshots, payrollExclusions, calendarEvents };
+
     useDebouncedSave(miscData, (data) => {
         localStorage.setItem(`${prefix}holidays`, JSON.stringify(data.holidays));
         localStorage.setItem(`${prefix}weeklyNotes`, JSON.stringify(data.weeklyNotes));
         localStorage.setItem(`${prefix}weeklyChecklists`, JSON.stringify(data.weeklyChecklists));
         localStorage.setItem(`${prefix}payrollSnapshots`, JSON.stringify(data.payrollSnapshots));
+        localStorage.setItem(`${prefix}payrollSnapshots`, JSON.stringify(data.payrollSnapshots));
         localStorage.setItem(`${prefix}payrollExclusions`, JSON.stringify(data.payrollExclusions));
+        localStorage.setItem(`${prefix}calendarEvents`, JSON.stringify(data.calendarEvents));
         if (settings.cloudMode) saveToCloud('misc_doc', data);
+
     });
 
 
@@ -257,8 +271,12 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
                 holidays: Array.from(holidays),
                 weeklyNotes,
                 weeklyChecklists,
-                payrollSnapshots
+                weeklyNotes,
+                weeklyChecklists,
+                payrollSnapshots,
+                calendarEvents
             });
+
 
             // 2. Ejecutar envíos
             console.log("Writing workers...");
@@ -303,8 +321,11 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
                 if (d.holidays) setHolidays(new Set(d.holidays));
                 if (d.weeklyNotes) setWeeklyNotes(d.weeklyNotes);
                 if (d.weeklyChecklists) setWeeklyChecklists(d.weeklyChecklists);
+
                 if (d.payrollSnapshots) setPayrollSnapshots(d.payrollSnapshots);
+                if (d.calendarEvents) setCalendarEvents(d.calendarEvents);
             }
+
             hasCloudSynced.current = true;
             return true;
         } catch (e) {
@@ -317,7 +338,8 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
         const fullData = {
             workers, shifts, settings,
             holidays: Array.from(holidays),
-            weeklyNotes, weeklyChecklists, payrollSnapshots,
+
+            weeklyNotes, weeklyChecklists, payrollSnapshots, calendarEvents,
             exportDate: new Date().toISOString()
         };
         const blob = new Blob([JSON.stringify(fullData, null, 2)], { type: 'application/json' });
@@ -337,8 +359,11 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
             if (data.holidays) setHolidays(new Set(data.holidays));
             if (data.weeklyNotes) setWeeklyNotes(data.weeklyNotes);
             if (data.weeklyChecklists) setWeeklyChecklists(data.weeklyChecklists);
+            if (data.weeklyChecklists) setWeeklyChecklists(data.weeklyChecklists);
             if (data.payrollSnapshots) setPayrollSnapshots(data.payrollSnapshots);
+            if (data.calendarEvents) setCalendarEvents(data.calendarEvents);
             return true;
+
         } catch (e) {
             console.error(e);
             return false;
@@ -351,6 +376,7 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
         settings, updateSettings, holidays, setHolidays, workers, setWorkers, shifts, setShifts,
         weeklyNotes, setWeeklyNotes, weeklyChecklists, setWeeklyChecklists,
         payrollSnapshots, setPayrollSnapshots,
+        calendarEvents, setCalendarEvents,
         isSynced, isLoading, forceCloudUpload, forceCloudDownload, exportData, importData
     };
 };
