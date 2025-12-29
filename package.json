@@ -1,7 +1,7 @@
 {
   "name": "gestor-turnos",
   "private": true,
-  "version": "1.4.82",
+  "version": "1.4.109",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,11 +16,15 @@
     "add": "^2.0.6",
     "firebase": "^12.6.0",
     "framer-motion": "^12.23.26",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.4",
+    "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.555.0",
     "o": "^2.3.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-hot-toast": "^2.6.0",
+    "recharts": "^3.6.0",
     "yarn": "^1.2.22",
     "zod": "^4.1.13"
   },

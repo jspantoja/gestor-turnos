@@ -5,6 +5,7 @@ import Button from '../shared/Button';
 import { useToast } from '../shared/Toast';
 import { toLocalISOString, getShift } from '../../utils/helpers';
 import { shiftSchema, validate } from '../../utils/validation';
+import { detectConflict } from '../../utils/validationLogic';
 
 const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, sedes, settings }) => {
     if (!selectedCell) return null;
@@ -23,30 +24,26 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
     const availablePlaces = workerSede ? workerSede.places : [];
     const currentShiftPlace = shift.place || worker.lugar || (availablePlaces.length > 0 ? availablePlaces[0] : '');
 
-    const update = (s) => {
-        // Validation
-        const result = validate(shiftSchema, {
-            workerId: worker.id,
-            date: selectedCell.dateStr,
-            type: s.type,
-            sede: s.place
-        });
 
-        if (!result.success) {
-            setErrors(result.errors);
-        } else {
-            setErrors(null);
+
+    // ... imports
+
+    const [validationPreview, setValidationPreview] = useState(null); // State for showing the warning
+
+    // ... inside component ...
+
+    const handleConfirmConflict = () => {
+        if (validationPreview && validationPreview.payload) {
+            // Execute the update bypassing validation
+            finalizeUpdate(validationPreview.payload);
+            setValidationPreview(null);
         }
+    };
 
-        if (worker.isReliever && s.type === 'off') {
-            const anyoneElseResting = workers.some(w => { if (w.id === worker.id) return false; const otherShift = getShift(shifts, w.id, selectedCell.dateStr); return otherShift.type === 'off'; });
-            if (anyoneElseResting) {
-                toast.error('El supernumerario NO puede descansar este día');
-                return;
-            }
-        }
+    const finalizeUpdate = (s) => {
+        // ... (Original logic: Reliever checks, state update)
 
-        // Check for Reliever Conflict (Exceptional Case)
+        // Check for Reliever Conflict (Exceptional Case) - Moved here
         let skipAutoReliever = false;
         if (s.type === 'off' && !worker.isReliever) {
             const reliever = workers.find(w => w.isReliever && w.isActive !== false);
@@ -132,6 +129,40 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
             return newShifts;
         });
         toast.success('Turno actualizado');
+    };
+
+    const update = (s) => {
+        // Schema Validation
+        const result = validate(shiftSchema, {
+            workerId: worker.id,
+            date: selectedCell.dateStr,
+            type: s.type,
+            sede: s.place
+        });
+
+        if (!result.success) {
+            setErrors(result.errors);
+            return; // Stop on schema error
+        } else {
+            setErrors(null);
+        }
+
+        if (worker.isReliever && s.type === 'off') {
+            const anyoneElseResting = workers.some(w => { if (w.id === worker.id) return false; const otherShift = getShift(shifts, w.id, selectedCell.dateStr); return otherShift.type === 'off'; });
+            if (anyoneElseResting) {
+                toast.error('El supernumerario NO puede descansar este día');
+                return;
+            }
+        }
+
+        // Business Logic Validation (Conflicts)
+        const conflict = detectConflict(worker.id, selectedCell.dateStr, s.type, shifts, settings);
+        if (conflict) {
+            setValidationPreview({ ...conflict, payload: s });
+            return; // Stop and show warning UI
+        }
+
+        finalizeUpdate(s);
     };
 
     const applyToWeek = () => {

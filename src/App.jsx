@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { Calendar, Users, FileText, Coffee, Settings, UserCheck, Loader, LogOut } from 'lucide-react';
+import { Calendar, Users, FileText, Coffee, Settings, UserCheck, Loader, LogOut, Activity } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
 import GlobalStyles from './styles/GlobalStyles';
@@ -22,6 +22,7 @@ import ErrorBoundary from './components/shared/ErrorBoundary';
 // --- LAZY LOADED COMPONENTS (Less frequently accessed views) ---
 const RestDaysView = lazy(() => import('./components/views/RestDaysView'));
 const PayrollReportView = lazy(() => import('./components/views/PayrollReportView'));
+const DashboardView = lazy(() => import('./components/views/DashboardView')); // NUEVO
 const SettingsView = lazy(() => import('./components/views/SettingsView'));
 const CloudConflictModal = lazy(() => import('./components/modals/CloudConflictModal'));
 
@@ -29,7 +30,7 @@ const CloudConflictModal = lazy(() => import('./components/modals/CloudConflictM
 const App = () => {
     const { success, error, warning, info } = useToast();
     const [theme, setTheme] = useState('light');
-    const [activeTab, setActiveTab] = useState('schedule');
+    const [activeTab, setActiveTab] = useState('dashboard'); // Default to Dashboard
     const [selectedCell, setSelectedCell] = useState(null);
     const [selectedWorkerId, setSelectedWorkerId] = useState(null);
     const [selectedDayDetail, setSelectedDayDetail] = useState(null);
@@ -216,6 +217,11 @@ const App = () => {
                         </ErrorBoundary>
                     ) : (
                         <ErrorBoundary>
+                            {activeTab === 'dashboard' && (
+                                <Suspense fallback={<SkeletonPage />}>
+                                    <DashboardView workers={workers} shifts={shifts} currentDate={currentDate} settings={settings} />
+                                </Suspense>
+                            )}
                             {activeTab === 'schedule' && <ScheduleView theme={theme} toggleTheme={toggleTheme} viewMode={viewMode} setViewMode={setViewMode} currentDate={currentDate} navigate={navigate} daysToShow={daysToShow} workers={workers} shifts={shifts} setSelectedCell={setSelectedCell} setSelectedDayDetail={setSelectedDayDetail} isSynced={isSynced && settings.cloudMode} settings={settings} calendarEvents={calendarEvents} setCalendarEvents={setCalendarEvents} />}
                             {activeTab === 'rest_days' && (
                                 <Suspense fallback={<SkeletonPage />}>
@@ -261,7 +267,7 @@ const App = () => {
 
                             <div className={`dock-container ${isModalOpen ? 'dock-hidden' : ''}`}>
                                 <div className="dock-menu">
-                                    {[{ id: 'schedule', label: 'Calendario', icon: Calendar }, { id: 'rest_days', label: 'Descansos', icon: Coffee }, { id: 'report', label: 'Nómina', icon: FileText }, { id: 'workers', label: 'Equipo', icon: Users }, { id: 'settings', label: 'Config', icon: Settings }].map(item => (
+                                    {[{ id: 'dashboard', label: 'Inicio', icon: Activity }, { id: 'schedule', label: 'Calendario', icon: Calendar }, { id: 'rest_days', label: 'Descansos', icon: Coffee }, { id: 'report', label: 'Nómina', icon: FileText }, { id: 'workers', label: 'Equipo', icon: Users }, { id: 'settings', label: 'Config', icon: Settings }].map(item => (
                                         <button key={item.id} onClick={() => setActiveTab(item.id)} className={`dock-button ${activeTab === item.id ? 'active' : ''}`} title={item.label}>
                                             <item.icon size={24} strokeWidth={2.5} className="dock-icon" />
                                         </button>

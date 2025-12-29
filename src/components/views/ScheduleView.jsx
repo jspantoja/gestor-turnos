@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { LayoutGrid, Cloud, CloudOff, Moon, Sun, ChevronLeft, ChevronRight, List, Info, Shield } from 'lucide-react';
+import { LayoutGrid, Cloud, CloudOff, Moon, Sun, ChevronLeft, ChevronRight, List, Info, Shield, Plus, Trash2, Calendar as CalendarIcon, Download } from 'lucide-react';
+import html2canvas from 'html2canvas';
 import SectionHeader from '../shared/SectionHeader';
 import GridWorkerCard from '../shared/GridWorkerCard';
 import { SHIFT_TYPES, SHIFT_COLORS } from '../../config/constants';
@@ -32,6 +33,25 @@ const ScheduleView = ({ theme, toggleTheme, viewMode, setViewMode, currentDate, 
             }
             return { ...prev, [dateStr]: newEvents };
         });
+    };
+
+    const handleExportImage = async () => {
+        const element = document.getElementById('calendar-grid');
+        if (element) {
+            try {
+                const canvas = await html2canvas(element, {
+                    scale: 2,
+                    backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff', // Approximate theme bg
+                    useCORS: true
+                });
+                const link = document.createElement('a');
+                link.download = `Calendario_${currentDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            } catch (error) {
+                console.error("Export failed", error);
+            }
+        }
     };
 
     // Filter workers: Show active workers OR inactive workers that have shifts in the current period
@@ -73,20 +93,27 @@ const ScheduleView = ({ theme, toggleTheme, viewMode, setViewMode, currentDate, 
                 <div className="flex justify-between items-end"><div><span className="text-xs font-bold tracking-[0.2em] text-[var(--text-secondary)] uppercase">{viewMode === 'biweekly' ? getQuincenaLabel(currentDate) : viewMode === 'weekly' ? 'Semana' : 'Mes'}</span><h1 className="text-3xl font-light text-[var(--text-primary)] capitalize">{currentDate.toLocaleDateString('es-ES', { month: 'long' })}</h1></div><div className="flex gap-2"><button onClick={() => navigate(-1)} className="p-2 rounded-full border border-[var(--glass-border)]"><ChevronLeft /></button><button onClick={() => navigate(1)} className="p-2 rounded-full border border-[var(--glass-border)]"><ChevronRight /></button></div></div>
                 <div className="flex justify-between items-center gap-4">
                     <div className="flex gap-4 overflow-x-auto no-scrollbar">{['weekly', 'biweekly', 'monthly'].map(m => (<button key={m} onClick={() => setViewMode(m)} className={`text-sm font-medium pb-2 relative whitespace-nowrap hover:text-[var(--text-primary)] transition-colors ${viewMode === m ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{m === 'weekly' ? 'Semana' : m === 'biweekly' ? 'Quincena' : 'Mes'}{viewMode === m && <div className="absolute bottom-0 left-0 w-full h-[2px] bg-[var(--text-primary)]" />}</button>))}</div>
-                    {viewMode !== 'monthly' && (
-                        <button
-                            onClick={() => setDisplayMode(prev => prev === 'list' ? 'grid' : 'list')}
-                            className="p-2 rounded-full border border-[var(--glass-border)] bg-[var(--card-bg)] flex-shrink-0"
-                            title={displayMode === 'list' ? 'Vista de cuadrícula' : 'Vista de lista'}
-                        >
-                            {displayMode === 'list' ? <LayoutGrid size={18} /> : <List size={18} />}
-                        </button>
-                    )}
+                    <div className="flex gap-2">
+                        {viewMode === 'monthly' && (
+                            <button onClick={handleExportImage} className="p-2 rounded-full border border-[var(--glass-border)] bg-[var(--card-bg)] flex-shrink-0" title="Exportar Imagen">
+                                <Download size={18} />
+                            </button>
+                        )}
+                        {viewMode !== 'monthly' && (
+                            <button
+                                onClick={() => setDisplayMode(prev => prev === 'list' ? 'grid' : 'list')}
+                                className="p-2 rounded-full border border-[var(--glass-border)] bg-[var(--card-bg)] flex-shrink-0"
+                                title={displayMode === 'list' ? 'Vista de cuadrícula' : 'Vista de lista'}
+                            >
+                                {displayMode === 'list' ? <LayoutGrid size={18} /> : <List size={18} />}
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
             <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-32 pt-4">
                 {viewMode === 'monthly' ? (
-                    <div className="grid grid-cols-7 gap-1 auto-rows-fr h-full">
+                    <div id="calendar-grid" className="grid grid-cols-7 gap-1 auto-rows-fr h-full p-2 bg-[var(--bg-body)]">
                         {['D', 'L', 'M', 'X', 'J', 'V', 'S'].map(d => <div key={d} className="text-center text-[10px] font-bold text-[var(--text-secondary)] py-2">{d}</div>)}
                         {daysToShow.map((d, i) => {
                             const dateStr = toLocalISOString(d.date);

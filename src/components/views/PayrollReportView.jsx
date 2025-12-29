@@ -8,6 +8,9 @@ import { toLocalISOString, getShift } from '../../utils/helpers';
 import { calculateWorkerPay } from '../../utils/payrollUtils';
 import PayrollDetailModal from '../modals/PayrollDetailModal';
 import { SHIFT_TYPES, SHIFT_COLORS } from '../../config/constants';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 
 const PayrollHistoryModal = ({ onClose, onSelect }) => {
     const periods = useMemo(() => {
@@ -189,7 +192,7 @@ const PayrollTrendsChart = ({ payrollSnapshots, currentDate }) => {
     );
 };
 
-const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDate, setShifts }) => {
+const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDate, setShifts, handleExportPDF }) => {
     const handleImport = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -379,6 +382,10 @@ const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDat
                 <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-colors"><Download size={18} /></div>
                 <div><div className="text-sm font-bold text-[var(--text-primary)]">Exportar Códigos</div><div className="text-[10px] text-[var(--text-secondary)]">Matriz CC + códigos</div></div>
             </button>
+            <button onClick={handleExportPDF} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--glass-dock)] hover:bg-[var(--glass-border)] transition-colors text-left group">
+                <div className="p-2 rounded-lg bg-red-500/10 text-red-500 group-hover:bg-red-500 group-hover:text-white transition-colors"><FileText size={18} /></div>
+                <div><div className="text-sm font-bold text-[var(--text-primary)]">Exportar PDF</div><div className="text-[10px] text-[var(--text-secondary)]">Reporte oficial</div></div>
+            </button>
             <button onClick={handlePrint} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--glass-dock)] hover:bg-[var(--glass-border)] transition-colors text-left group">
                 <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500 group-hover:bg-purple-500 group-hover:text-white transition-colors"><Printer size={18} /></div>
                 <div><div className="text-sm font-bold text-[var(--text-primary)]">Imprimir</div><div className="text-[10px] text-[var(--text-secondary)]">Vista de impresión</div></div>
@@ -547,6 +554,135 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
     const startDayNum = isFirstQ ? 1 : 16;
     const endDayNum = isFirstQ ? 15 : new Date(yearNum, currentDate.getMonth() + 1, 0).getDate();
 
+    const handleExportPDF = () => {
+        const doc = new jsPDF('l', 'mm', 'a4');
+        const pageWidth = doc.internal.pageSize.width;
+
+        // --- 1. HEADER ---
+        doc.setFontSize(18);
+        doc.setTextColor(30, 41, 59); // var(--text-primary) equivalent
+        doc.text(`Nómina - ${monthName} ${yearNum}`, 14, 20);
+
+        doc.setFontSize(10);
+        doc.setTextColor(100, 116, 139); // var(--text-secondary) equivalent
+        doc.text(`Periodo: ${startDayNum} al ${endDayNum} de ${monthName} ${yearNum}`, 14, 26);
+
+        let finalY = 32;
+
+        // --- 2. CUSTOM MESSAGE (If exists) ---
+        if (settings.payrollConfig?.customMessage) {
+            doc.setFillColor(255, 251, 235); // amber-50
+            doc.setDrawColor(253, 230, 138); // amber-200
+            doc.roundedRect(14, finalY, pageWidth - 28, 12, 3, 3, 'FD');
+
+            doc.setFontSize(9);
+            doc.setTextColor(180, 83, 9); // amber-700
+            doc.text(settings.payrollConfig.customMessage.toUpperCase(), pageWidth / 2, finalY + 8, { align: 'center' });
+
+            finalY += 18;
+        }
+
+        // --- 3. DATA PREPARATION ---
+        const tableHead = [
+            ['Nombre', ...daysToShow.map(d => `${d.date.getDate()}\n${d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}`), 'DOM', 'FEST', 'NOCT', 'REC']
+        ];
+
+        const tableBody = [];
+
+        // Iterate Groups logic for layout
+        Object.entries(groupedWorkers).forEach(([sedeName, group]) => {
+            // Add Group Header Row
+            tableBody.push([{ content: sedeName.toUpperCase(), colSpan: daysToShow.length + 5, styles: { fillColor: [241, 245, 249], fontStyle: 'bold', textColor: [71, 85, 105], halign: 'left' } }]);
+
+            group.forEach(w => {
+                const stats = allWorkerStats.get(w.id);
+                if (!stats) return;
+
+                const rowData = [
+                    w.name, // Name
+                ];
+
+                // Days
+                daysToShow.forEach(d => {
+                    const dateStr = toLocalISOString(d.date);
+                    const s = getShift(shifts, w.id, dateStr);
+                    const type = SHIFT_TYPES[s.type || 'off'];
+
+                    // Resolve Code
+                    const customShiftDef = s.type === 'custom' && settings.customShifts
+                        ? settings.customShifts.find(cs => cs.id === s.customShiftId || cs.code === s.code)
+                        : null;
+                    const displayCode = customShiftDef?.payrollCode || (s.type === 'custom' && s.code ? s.code : type.code);
+
+                    rowData.push(displayCode);
+                });
+
+                // Totals
+                const surcharges = calculateWorkerPay(w, shifts, daysToShow, holidays, settings).costs.totalSurcharges;
+                rowData.push(
+                    (stats.sundays * 7.33).toFixed(1), // DOM
+                    (stats.holidays * 7.33).toFixed(1), // FEST
+                    stats.nightHours.toFixed(1), // NOCT
+                    `$${surcharges.toLocaleString()}` // REC
+                );
+
+                tableBody.push(rowData);
+            });
+        });
+
+        // --- 4. GENERATE TABLE ---
+        autoTable(doc, {
+            startY: finalY,
+            head: tableHead,
+            body: tableBody,
+            theme: 'grid',
+            styles: {
+                fontSize: 7,
+                cellPadding: 1,
+                halign: 'center',
+                valign: 'middle',
+                lineWidth: 0.1,
+                lineColor: [226, 232, 240] // slate-200
+            },
+            headStyles: {
+                fillColor: [255, 255, 255],
+                textColor: [100, 116, 139],
+                fontStyle: 'bold',
+                lineWidth: 0.1,
+                lineColor: [226, 232, 240]
+            },
+            columnStyles: {
+                0: { halign: 'left', cellWidth: 40, fontStyle: 'bold', textColor: [15, 23, 42] }, // Name column
+                // Last 4 columns (totals)
+                [daysToShow.length + 1]: { fontStyle: 'bold', fillColor: [248, 250, 252] }, // DOM
+                [daysToShow.length + 2]: { fontStyle: 'bold', fillColor: [248, 250, 252] }, // FEST
+                [daysToShow.length + 3]: { fontStyle: 'bold', fillColor: [248, 250, 252] }, // NOCT
+                [daysToShow.length + 4]: { fontStyle: 'bold', fillColor: [248, 250, 252] }  // REC
+            },
+            didParseCell: (data) => {
+                // Skip header and group rows for detailed coloring
+                if (data.section === 'head') return;
+                if (data.row.raw[0] && data.row.raw[0].content) return; // Group Header
+
+                // Color Day Cells
+                if (data.column.index >= 1 && data.column.index <= daysToShow.length) {
+                    const dayIndex = data.column.index - 1;
+                    const d = daysToShow[dayIndex];
+                    const dateStr = toLocalISOString(d.date);
+                    const isSun = d.date.getDay() === 0;
+                    const isHol = holidays.has(dateStr);
+
+                    if (isSun || isHol) {
+                        data.cell.styles.fillColor = [254, 242, 242]; // red-50
+                        data.cell.styles.textColor = [220, 38, 38];   // red-600
+                    }
+                }
+            }
+        });
+
+        doc.save(`Nomina_${monthName}_${yearNum}.pdf`);
+    };
+
     return (
         <div className="flex flex-col h-full animate-enter bg-[var(--bg-body)]">
             {/* AGREGA LA INSTRUCCIÓN AQUÍ, justo antes de la tabla o en el encabezado */}
@@ -569,53 +705,53 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
             </div>
             <div className="flex-1 overflow-auto px-6 pb-32">
                 {/* Scroll Shadow Container */}
-                <div className={`relative payroll-scroll-container ${!scrollState.atStart ? 'show-left-shadow' : ''} ${!scrollState.atEnd ? 'show-right-shadow' : ''}`}>
-                    <div
-                        ref={scrollContainerRef}
-                        onScroll={handleScroll}
-                        className="overflow-x-auto payroll-table-scroll"
-                        style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--glass-border) transparent' }}
-                    >
-                        <div className="glass-panel rounded-xl overflow-hidden shadow-sm border border-[var(--glass-border)] min-w-max">
-                            <table className="report-table w-full"><thead><tr><th className="report-header-cell report-sticky-col p-3 min-w-[300px] text-left text-xs font-bold text-[var(--text-secondary)] uppercase">Nombres</th>{daysToShow.map(d => { const isSun = d.date.getDay() === 0; const dateStr = toLocalISOString(d.date); const isHol = holidays.has(dateStr); return (<th key={dateStr} className={`report-header-cell text-center p-1 min-w-[40px] cursor-pointer hover:bg-[var(--glass-border)] transition-colors ${(isSun || isHol) ? 'holiday-bg' : ''}`} onClick={() => toggleHoliday(dateStr)}><div className={`text-[10px] font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-secondary)]'}`}>{d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}</div><div className={`text-sm font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-primary)]'}`}>{d.date.getDate()}</div></th>) })}<th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DOM<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">FEST<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">H.<br />NOCT</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DÍAS<br />REC</th></tr></thead>
-                                <tbody>
-                                    {Object.entries(groupedWorkers).map(([sedeName, group]) => (
-                                        <React.Fragment key={sedeName}>
-                                            <tr><td colSpan={daysToShow.length + 5} className="bg-[var(--glass-border)] p-2 font-bold text-xs uppercase tracking-wider text-[var(--text-secondary)] pl-4">{sedeName}</td></tr>
-                                            {group.map(w => (
-                                                <PayrollRow
-                                                    key={w.id}
-                                                    worker={w}
-                                                    daysToShow={daysToShow}
-                                                    shifts={shifts}
-                                                    settings={settings}
-                                                    holidays={holidays}
-                                                    setSelectedCell={setSelectedCell}
-                                                    stats={allWorkerStats.get(w.id)}
-                                                />
-                                            ))}
-                                        </React.Fragment>
-                                    ))}
-                                </tbody>
-                            </table>
+                <div id="payroll-export-container" className="bg-[var(--bg-body)] p-2">
+                    <div className={`relative payroll-scroll-container ${!scrollState.atStart ? 'show-left-shadow' : ''} ${!scrollState.atEnd ? 'show-right-shadow' : ''}`}>
+                        <div
+                            ref={scrollContainerRef}
+                            onScroll={handleScroll}
+                            className="overflow-x-auto payroll-table-scroll"
+                            style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--glass-border) transparent' }}
+                        >
+                            <div className="glass-panel rounded-xl overflow-hidden shadow-sm border border-[var(--glass-border)] min-w-max">
+                                <table className="report-table w-full"><thead><tr><th className="report-header-cell report-sticky-col p-3 min-w-[300px] text-left text-xs font-bold text-[var(--text-secondary)] uppercase">Nombres</th>{daysToShow.map(d => { const isSun = d.date.getDay() === 0; const dateStr = toLocalISOString(d.date); const isHol = holidays.has(dateStr); return (<th key={dateStr} className={`report-header-cell text-center p-1 min-w-[40px] cursor-pointer hover:bg-[var(--glass-border)] transition-colors ${(isSun || isHol) ? 'holiday-bg' : ''}`} onClick={() => toggleHoliday(dateStr)}><div className={`text-[10px] font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-secondary)]'}`}>{d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}</div><div className={`text-sm font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-primary)]'}`}>{d.date.getDate()}</div></th>) })}<th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DOM<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">FEST<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">H.<br />NOCT</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DÍAS<br />REC</th></tr></thead>
+                                    <tbody>
+                                        {Object.entries(groupedWorkers).map(([sedeName, group]) => (
+                                            <React.Fragment key={sedeName}>
+                                                <tr><td colSpan={daysToShow.length + 5} className="bg-[var(--glass-border)] p-2 font-bold text-xs uppercase tracking-wider text-[var(--text-secondary)] pl-4">{sedeName}</td></tr>
+                                                {group.map(w => (
+                                                    <PayrollRow
+                                                        key={w.id}
+                                                        worker={w}
+                                                        daysToShow={daysToShow}
+                                                        shifts={shifts}
+                                                        settings={settings}
+                                                        holidays={holidays}
+                                                        setSelectedCell={setSelectedCell}
+                                                        stats={allWorkerStats.get(w.id)}
+                                                    />
+                                                ))}
+                                            </React.Fragment>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
+                        {!scrollState.atEnd && (
+                            <div className="scroll-hint">
+                                <ChevronRight size={16} className="animate-pulse" />
+                                <span className="text-[10px]">Desliza</span>
+                            </div>
+                        )}
                     </div>
-                    {/* Scroll Indicator */}
-                    {!scrollState.atEnd && (
-                        <div className="scroll-hint">
-                            <ChevronRight size={16} className="animate-pulse" />
-                            <span className="text-[10px]">Desliza</span>
+                    {settings.payrollConfig.customMessage && (
+                        <div className="mt-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-center print-visible">
+                            <p className="text-sm font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                                {settings.payrollConfig.customMessage}
+                            </p>
                         </div>
                     )}
                 </div>
-                {/* BUSCA DONDE ESTABA EL TEXTO FIJO Y REEMPLÁZALO CON ESTO: */}
-                {settings.payrollConfig.customMessage && (
-                    <div className="mt-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-center print-visible">
-                        <p className="text-sm font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
-                            {settings.payrollConfig.customMessage}
-                        </p>
-                    </div>
-                )}
                 {/* --- PAYROLL ANALYTICS PANEL --- */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 no-print">
                     <PayrollCostCalculator
@@ -639,7 +775,8 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
                         daysToShow={daysToShow}
                         settings={settings}
                         currentDate={currentDate}
-                        setShifts={setShifts} // Pass setShifts here
+                        setShifts={setShifts}
+                        handleExportPDF={handleExportPDF}
                     />
                 </div>
             </div>
