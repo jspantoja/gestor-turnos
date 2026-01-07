@@ -2,8 +2,9 @@ import React from 'react';
 import { X, Briefcase, Shield, Clock, MapPin, Coffee, AlertCircle } from 'lucide-react';
 import { SHIFT_TYPES, SHIFT_COLORS } from '../../config/constants';
 import { getShift } from '../../utils/helpers';
+import { getShiftStyle } from '../../utils/styleEngine';
 
-const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings }) => {
+const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings, onEdit }) => {
     if (!dateStr) return null;
     const date = new Date(dateStr + 'T12:00:00');
 
@@ -28,6 +29,11 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings }) => {
     const sortOrder = { morning: 1, afternoon: 2, night: 3 };
     working.sort((a, b) => (sortOrder[a.shift.type] || 99) - (sortOrder[b.shift.type] || 99));
 
+    // Helper para manejar click en fila
+    const handleRowClick = (workerId) => {
+        if (onEdit) onEdit(workerId);
+    };
+
     return (
         <div className="modal-overlay z-[90] sm:items-center items-end animate-enter" onClick={onClose}>
             <div className="w-full sm:w-[500px] liquid-glass p-0 rounded-t-[32px] sm:rounded-3xl m-0 sm:m-4 max-h-[80dvh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -51,36 +57,58 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings }) => {
                         <h3 className="text-xs font-bold uppercase text-[var(--success-text)] mb-3 flex items-center gap-2 bg-[var(--card-bg)] backdrop-filter backdrop-blur-md w-fit px-2 py-1 rounded-lg border border-[var(--glass-border)]" style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><Briefcase size={12} /> Personal Programado ({working.length})</h3>
                         <div className="space-y-2">
                             {working.length > 0 ? working.map(w => {
-                                // --- CORRECCIÓN CLAVE: Fallback de seguridad ---
+                                // --- Visual System Integration ---
                                 const typeConfig = SHIFT_TYPES[w.shift.type] || SHIFT_TYPES.unassigned || { label: 'Desconocido', style: 'bg-gray-500 text-white' };
                                 const isCustom = w.shift.type === 'custom';
-                                // Use custom shift name if available, otherwise type label
-                                const displayLabel = isCustom && w.shift.customShiftName ? w.shift.customShiftName : typeConfig.label;
 
-                                // Enhanced Color Logic: Priority to Settings
-                                let customColor = null;
-                                if (isCustom) {
-                                    // 1. Try Settings
-                                    if (settings?.customShifts) {
-                                        const def = settings.customShifts.find(cs =>
-                                            (w.shift.customShiftId && cs.id === w.shift.customShiftId) ||
-                                            (w.shift.code && cs.code === w.shift.code) ||
-                                            (w.shift.customShiftName && cs.name === w.shift.customShiftName)
-                                        );
-                                        if (def && def.color) {
-                                            customColor = SHIFT_COLORS.find(c => c.id === def.color);
-                                        }
+                                let displayLabel = isCustom && w.shift.customShiftName ? w.shift.customShiftName : typeConfig.label;
+                                let colorData = { bg: 'bg-gray-100', text: 'text-gray-500', hex: null };
+
+                                if (isCustom && settings?.customShifts) {
+                                    // 1. Try Settings Lookup (Name & Color)
+                                    const def = settings.customShifts.find(cs =>
+                                        (w.shift.customShiftId && cs.id === w.shift.customShiftId) ||
+                                        (w.shift.code && cs.code === w.shift.code)
+                                    );
+
+                                    let customColor = null;
+                                    let hexColor = null;
+
+                                    if (def) {
+                                        displayLabel = def.name; // Sync name
+                                        if (def.color) customColor = SHIFT_COLORS.find(c => c.id === def.color);
+                                        if (!customColor && def.colorHex) hexColor = def.colorHex;
                                     }
+
                                     // 2. Fallback to Stored
-                                    if (!customColor && w.shift.customShiftColor) {
+                                    if (!customColor && !hexColor && w.shift.customShiftColor) {
                                         customColor = SHIFT_COLORS.find(c => c.id === w.shift.customShiftColor);
+                                        if (!customColor && w.shift.customShiftColor.startsWith('#')) hexColor = w.shift.customShiftColor;
                                     }
+
+                                    if (customColor) {
+                                        colorData = { bg: customColor.bg, text: customColor.text, hex: customColor.hex };
+                                    } else if (hexColor) {
+                                        colorData = { hex: hexColor };
+                                    } else {
+                                        const typeDef = SHIFT_TYPES['custom'];
+                                        const fallbackBg = typeDef?.style ? typeDef.style.split(' ')[0] : 'bg-emerald-100';
+                                        const fallbackText = typeDef?.style ? typeDef.style.split(' ')[1] : 'text-emerald-800';
+                                        colorData = { bg: fallbackBg, text: fallbackText };
+                                    }
+                                } else if (!isCustom && typeConfig) {
+                                    // Standard Types
+                                    const parts = typeConfig.style.split(' ');
+                                    colorData = {
+                                        bg: parts.find(p => p.startsWith('bg-')) || 'bg-gray-100',
+                                        text: parts.find(p => p.startsWith('text-')) || 'text-gray-800'
+                                    };
                                 }
 
-                                const pillClass = customColor ? `${customColor.bg} ${customColor.text}` : typeConfig.style;
+                                const { className, style } = getShiftStyle(colorData, settings);
 
                                 return (
-                                    <div key={w.id} className="glass-panel p-3 rounded-xl flex items-center justify-between border-l-4" style={{ borderLeftColor: w.color }}>
+                                    <div key={w.id} onClick={() => handleRowClick(w.id)} className="glass-panel p-3 rounded-xl flex items-center justify-between border-l-4 cursor-pointer hover:bg-[var(--glass-border)] transition-colors" style={{ borderLeftColor: w.color }}>
                                         <div className="flex items-center gap-3">
                                             <div className="w-8 h-8 rounded-full bg-[var(--glass-border)] flex items-center justify-center text-xs font-bold">{w.name[0]}</div>
                                             <div>
@@ -93,8 +121,8 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings }) => {
                                                 </div>
                                             </div>
                                         </div>
-                                        {/* Usamos pillClass dinámica */}
-                                        <div className={`px-2 py-1 rounded-lg text-[10px] font-bold ${pillClass} `}>{displayLabel}</div>
+                                        {/* Shift Pill Unified */}
+                                        <div className={`px-2 py-1 text-[10px] font-bold ${className}`} style={style}>{displayLabel}</div>
                                     </div>
                                 )
                             }) : <p className="text-sm text-[var(--text-tertiary)] italic text-center py-2">No hay turnos programados.</p>}
@@ -108,7 +136,7 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings }) => {
                             {resting.length > 0 ? resting.map(w => {
                                 const coveringReliever = workers.find(r => { const s = getShift(shifts, r.id, dateStr); return s && s.coveringId === w.id; });
                                 return (
-                                    <div key={w.id} className="glass-panel p-2 rounded-xl flex flex-col gap-1 opacity-80">
+                                    <div key={w.id} onClick={() => handleRowClick(w.id)} className="glass-panel p-2 rounded-xl flex flex-col gap-1 opacity-80 cursor-pointer hover:bg-[var(--glass-border)] transition-colors">
                                         <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: w.color }}></div><span className="text-sm font-medium text-[var(--text-primary)]">{w.name}</span></div>
                                         {coveringReliever && (<div className="text-[9px] text-[var(--reliever-badge)] flex items-center gap-1 ml-4"><Shield size={8} /> Cubierto por {coveringReliever.name.split(' ')[0]}</div>)}
                                     </div>
@@ -125,7 +153,7 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings }) => {
                                 {absent.map(w => {
                                     const typeConfig = SHIFT_TYPES[w.shift.type] || SHIFT_TYPES.sick || { label: 'Ausente', style: 'bg-red-500 text-white' };
                                     return (
-                                        <div key={w.id} className="glass-panel p-2 rounded-xl flex items-center justify-between border border-[var(--warning-soft)]">
+                                        <div key={w.id} onClick={() => handleRowClick(w.id)} className="glass-panel p-2 rounded-xl flex items-center justify-between border border-[var(--warning-soft)] cursor-pointer hover:bg-[var(--glass-border)] transition-colors">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-6 h-6 rounded-full bg-[var(--glass-border)] flex items-center justify-center text-[10px] font-bold">{w.name[0]}</div>
                                                 <span className="text-sm font-medium text-[var(--text-primary)]">{w.name}</span>

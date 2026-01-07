@@ -252,7 +252,18 @@ const App = () => {
                                     />
                                 </Suspense>
                             )}
-                            <DayDetailModal dateStr={selectedDayDetail} onClose={() => setSelectedDayDetail(null)} workers={workers} shifts={shifts} settings={settings} />
+                            <DayDetailModal
+                                dateStr={selectedDayDetail}
+                                onClose={() => setSelectedDayDetail(null)}
+                                workers={workers}
+                                shifts={shifts}
+                                settings={settings}
+                                onEdit={(workerId) => {
+                                    const dateStr = selectedDayDetail;
+                                    setSelectedDayDetail(null);
+                                    setTimeout(() => setSelectedCell({ workerId, dateStr }), 50); // Small delay to ensure modal close
+                                }}
+                            />
                             <EditModal selectedCell={selectedCell} setSelectedCell={setSelectedCell} workers={workers} shifts={shifts} setShifts={setShifts} sedes={settings.sedes} settings={settings} />
 
                             <Suspense fallback={null}>

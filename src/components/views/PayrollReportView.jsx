@@ -4,6 +4,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import SectionHeader from '../shared/SectionHeader';
+import HelpTooltip from '../shared/HelpTooltip';
 import { toLocalISOString, getShift } from '../../utils/helpers';
 import { calculateWorkerPay } from '../../utils/payrollUtils';
 import PayrollDetailModal from '../modals/PayrollDetailModal';
@@ -376,11 +377,23 @@ const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDat
             <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1">Acciones</h3>
             <button onClick={handleExport} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--glass-dock)] hover:bg-[var(--glass-border)] transition-colors text-left group">
                 <div className="p-2 rounded-lg bg-green-500/10 text-green-500 group-hover:bg-green-500 group-hover:text-white transition-colors"><Download size={18} /></div>
-                <div><div className="text-sm font-bold text-[var(--text-primary)]">Exportar CSV</div><div className="text-[10px] text-[var(--text-secondary)]">Descargar tabla</div></div>
+                <div>
+                    <div className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                        Exportar CSV
+                        <HelpTooltip text="Descarga una tabla simple compatible con Excel para tus propios cálculos." />
+                    </div>
+                    <div className="text-[10px] text-[var(--text-secondary)]">Descargar tabla</div>
+                </div>
             </button>
             <button onClick={handleExportCodes} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--glass-dock)] hover:bg-[var(--glass-border)] transition-colors text-left group">
                 <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-colors"><Download size={18} /></div>
-                <div><div className="text-sm font-bold text-[var(--text-primary)]">Exportar Códigos</div><div className="text-[10px] text-[var(--text-secondary)]">Matriz CC + códigos</div></div>
+                <div>
+                    <div className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                        Exportar Códigos
+                        <HelpTooltip text="Genera un archivo especial con 'Códigos de Novedad' (M, T, N, etc.) diseñado para importar en software contable externo." />
+                    </div>
+                    <div className="text-[10px] text-[var(--text-secondary)]">Matriz CC + códigos</div>
+                </div>
             </button>
             <button onClick={handleExportPDF} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--glass-dock)] hover:bg-[var(--glass-border)] transition-colors text-left group">
                 <div className="p-2 rounded-lg bg-red-500/10 text-red-500 group-hover:bg-red-500 group-hover:text-white transition-colors"><FileText size={18} /></div>
@@ -584,7 +597,7 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
 
         // --- 3. DATA PREPARATION ---
         const tableHead = [
-            ['Nombre', ...daysToShow.map(d => `${d.date.getDate()}\n${d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}`), 'DOM', 'FEST', 'NOCT', 'REC']
+            ['Nombre', ...daysToShow.map(d => `${d.date.getDate()}\n${d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}`), 'DOM', 'FEST', 'NOCT']
         ];
 
         const tableBody = [];
@@ -592,7 +605,7 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
         // Iterate Groups logic for layout
         Object.entries(groupedWorkers).forEach(([sedeName, group]) => {
             // Add Group Header Row
-            tableBody.push([{ content: sedeName.toUpperCase(), colSpan: daysToShow.length + 5, styles: { fillColor: [241, 245, 249], fontStyle: 'bold', textColor: [71, 85, 105], halign: 'left' } }]);
+            tableBody.push([{ content: sedeName.toUpperCase(), colSpan: daysToShow.length + 4, styles: { fillColor: [241, 245, 249], fontStyle: 'bold', textColor: [71, 85, 105], halign: 'left' } }]);
 
             group.forEach(w => {
                 const stats = allWorkerStats.get(w.id);
@@ -618,12 +631,10 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
                 });
 
                 // Totals
-                const surcharges = calculateWorkerPay(w, shifts, daysToShow, holidays, settings).costs.totalSurcharges;
                 rowData.push(
                     (stats.sundays * 7.33).toFixed(1), // DOM
                     (stats.holidays * 7.33).toFixed(1), // FEST
-                    stats.nightHours.toFixed(1), // NOCT
-                    `$${surcharges.toLocaleString()}` // REC
+                    stats.nightHours.toFixed(1) // NOCT
                 );
 
                 tableBody.push(rowData);
@@ -653,11 +664,10 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
             },
             columnStyles: {
                 0: { halign: 'left', cellWidth: 40, fontStyle: 'bold', textColor: [15, 23, 42] }, // Name column
-                // Last 4 columns (totals)
+                // Last 3 columns (totals)
                 [daysToShow.length + 1]: { fontStyle: 'bold', fillColor: [248, 250, 252] }, // DOM
                 [daysToShow.length + 2]: { fontStyle: 'bold', fillColor: [248, 250, 252] }, // FEST
-                [daysToShow.length + 3]: { fontStyle: 'bold', fillColor: [248, 250, 252] }, // NOCT
-                [daysToShow.length + 4]: { fontStyle: 'bold', fillColor: [248, 250, 252] }  // REC
+                [daysToShow.length + 3]: { fontStyle: 'bold', fillColor: [248, 250, 252] }  // NOCT
             },
             didParseCell: (data) => {
                 // Skip header and group rows for detailed coloring
@@ -714,7 +724,28 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
                             style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--glass-border) transparent' }}
                         >
                             <div className="glass-panel rounded-xl overflow-hidden shadow-sm border border-[var(--glass-border)] min-w-max">
-                                <table className="report-table w-full"><thead><tr><th className="report-header-cell report-sticky-col p-3 min-w-[300px] text-left text-xs font-bold text-[var(--text-secondary)] uppercase">Nombres</th>{daysToShow.map(d => { const isSun = d.date.getDay() === 0; const dateStr = toLocalISOString(d.date); const isHol = holidays.has(dateStr); return (<th key={dateStr} className={`report-header-cell text-center p-1 min-w-[40px] cursor-pointer hover:bg-[var(--glass-border)] transition-colors ${(isSun || isHol) ? 'holiday-bg' : ''}`} onClick={() => toggleHoliday(dateStr)}><div className={`text-[10px] font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-secondary)]'}`}>{d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}</div><div className={`text-sm font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-primary)]'}`}>{d.date.getDate()}</div></th>) })}<th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DOM<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">FEST<br />LAB.</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">H.<br />NOCT</th><th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DÍAS<br />REC</th></tr></thead>
+                                <table className="report-table w-full"><thead><tr><th className="report-header-cell report-sticky-col p-3 min-w-[300px] text-left text-xs font-bold text-[var(--text-secondary)] uppercase">Nombres</th>{daysToShow.map(d => { const isSun = d.date.getDay() === 0; const dateStr = toLocalISOString(d.date); const isHol = holidays.has(dateStr); return (<th key={dateStr} className={`report-header-cell text-center p-1 min-w-[40px] cursor-pointer hover:bg-[var(--glass-border)] transition-colors ${(isSun || isHol) ? 'holiday-bg' : ''}`} onClick={() => toggleHoliday(dateStr)}><div className={`text-[10px] font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-secondary)]'}`}>{d.date.toLocaleDateString('es-ES', { weekday: 'narrow' }).toUpperCase()}</div><div className={`text-sm font-bold ${(isSun || isHol) ? 'holiday-text' : 'text-[var(--text-primary)]'}`}>{d.date.getDate()}</div></th>) })}
+                                    <th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">DOM<br />LAB.</th>
+                                    <th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">FEST<br />LAB.</th>
+                                    <th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">
+                                        <div className="flex flex-col items-center justify-center">
+                                            <span>H.</span>
+                                            <div className="flex items-center gap-1">
+                                                NOCT
+                                                <HelpTooltip text="Total acumulado de horas trabajadas dentro de tu horario nocturno (ej. 9pm-6am)." size={10} />
+                                            </div>
+                                        </div>
+                                    </th>
+                                    <th className="report-header-cell text-center p-2 min-w-[80px] text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--glass-dock)]">
+                                        <div className="flex flex-col items-center justify-center">
+                                            <span>DÍAS</span>
+                                            <div className="flex items-center gap-1">
+                                                REC
+                                                <HelpTooltip text="Conteo de turnos que generaron algún recargo (ya sea por ser Domingo, Festivo o tener horas nocturnas)." size={10} />
+                                            </div>
+                                        </div>
+                                    </th>
+                                </tr></thead>
                                     <tbody>
                                         {Object.entries(groupedWorkers).map(([sedeName, group]) => (
                                             <React.Fragment key={sedeName}>

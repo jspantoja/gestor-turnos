@@ -67,9 +67,9 @@ const DashboardView = ({ workers, shifts, currentDate, settings }) => {
                 if (s.type !== 'unassigned') {
                     let label;
                     if (s.type === 'custom') {
-                        // Priority: Saved Name -> Look up in Settings -> 'Personalizado'
+                        // Priority: Look up in Settings -> Saved Name -> 'Personalizado'
                         const customDef = settings.customShifts?.find(cs => cs.id === s.customShiftId || cs.code === s.code);
-                        label = s.customShiftName || customDef?.name || 'Personalizado';
+                        label = customDef?.name || s.customShiftName || 'Personalizado';
                     } else {
                         // Standard types or specific custom statuses (like absences)
                         label = SHIFT_TYPES[s.type]?.label || settings.customStatuses?.find(cs => cs.id === s.type)?.name || 'Otro';

@@ -5,6 +5,7 @@ import SectionHeader from '../shared/SectionHeader';
 import GridWorkerCard from '../shared/GridWorkerCard';
 import { SHIFT_TYPES, SHIFT_COLORS } from '../../config/constants';
 import { getQuincenaLabel, toLocalISOString, isToday, getShift, getWorkerDisplayName } from '../../utils/helpers';
+import { getShiftStyle } from '../../utils/styleEngine';
 
 const ScheduleView = ({ theme, toggleTheme, viewMode, setViewMode, currentDate, navigate, daysToShow, workers, shifts, setSelectedCell, setSelectedDayDetail, isSynced, settings, calendarEvents, setCalendarEvents }) => {
     const [displayMode, setDisplayMode] = useState('list'); // 'list' or 'grid'
@@ -191,79 +192,76 @@ const ScheduleView = ({ theme, toggleTheme, viewMode, setViewMode, currentDate, 
                                             {dayWorkers.map(w => {
                                                 const s = getShift(shifts, w.id, dateStr);
 
-                                                // Resolve Shift Label and Style
+                                                // --- Visual System Integration ---
                                                 let shiftLabel = '—';
-                                                let labelStyle = '';
-                                                let customColor = null;
+                                                let colorData = { bg: 'bg-gray-100', text: 'text-gray-500', hex: null };
 
-                                                // 1. Check Custom Shift (Time-based) - PRIORITY
+                                                // 1. Check Custom Shift
                                                 if (s.type === 'custom') {
                                                     shiftLabel = s.customShiftName || 'Personalizado';
+                                                    let customColorObj = null;
+                                                    let customHex = null;
 
-                                                    // Find color definition
+                                                    // A. Try Settings (Dynamic)
                                                     if (settings?.customShifts) {
-                                                        const def = settings.customShifts.find(cs => (s.customShiftId && cs.id === s.customShiftId) || (s.code && cs.code === s.code));
+                                                        const def = settings.customShifts.find(cs =>
+                                                            (s.customShiftId && cs.id === s.customShiftId) ||
+                                                            (s.code && cs.code === s.code) ||
+                                                            (s.customShiftName && cs.name === s.customShiftName)
+                                                        );
                                                         if (def) {
-                                                            // Try to find if it's a preset color
-                                                            customColor = SHIFT_COLORS.find(c => c.id === def.color);
-
-                                                            // If not a preset (custom hex), construct custom color object
-                                                            if (!customColor && def.colorHex) {
-                                                                customColor = {
-                                                                    bg: 'bg-white/10', // Generic background or assume dynamic style handles it
-                                                                    text: 'text-white',
-                                                                    border: '',
-                                                                    hex: def.colorHex
-                                                                };
-                                                            }
+                                                            shiftLabel = def.name; // SYNC NAME
+                                                            if (def.color) customColorObj = SHIFT_COLORS.find(c => c.id === def.color);
+                                                            if (!customColorObj && def.colorHex) customHex = def.colorHex;
                                                         }
                                                     }
-                                                    if (!customColor && s.customShiftColor) {
-                                                        customColor = SHIFT_COLORS.find(c => c.id === s.customShiftColor);
+
+                                                    // B. Fallback to Stored
+                                                    if (!customColorObj && !customHex && s.customShiftColor) {
+                                                        customColorObj = SHIFT_COLORS.find(c => c.id === s.customShiftColor);
+                                                        if (!customColorObj && s.customShiftColor.startsWith('#')) customHex = s.customShiftColor;
                                                     }
 
-                                                    // Styles for Custom Shifts
-                                                    const typeDef = SHIFT_TYPES['custom'];
-                                                    labelStyle = typeDef ? typeDef.style.replace('bg-', 'bg-opacity-20 ') : 'bg-emerald-100 text-emerald-800';
+                                                    if (customColorObj) {
+                                                        colorData = { bg: customColorObj.bg, text: customColorObj.text, hex: customColorObj.hex };
+                                                    } else if (customHex) {
+                                                        colorData = { hex: customHex };
+                                                    } else {
+                                                        const typeDef = SHIFT_TYPES['custom'];
+                                                        const fallbackBg = typeDef?.style ? typeDef.style.split(' ')[0] : 'bg-emerald-100';
+                                                        const fallbackText = typeDef?.style ? typeDef.style.split(' ')[1] : 'text-emerald-800';
+                                                        colorData = { bg: fallbackBg, text: fallbackText };
+                                                    }
                                                 }
-                                                // 2. Check Standard/Static Types
+                                                // 2. Standard Types
                                                 else if (SHIFT_TYPES[s.type]) {
                                                     const typeDef = SHIFT_TYPES[s.type];
-
                                                     shiftLabel = typeDef.label;
-                                                    labelStyle = typeDef.style.replace('bg-', 'bg-opacity-20 ');
+                                                    const parts = typeDef.style.split(' ');
+                                                    colorData = {
+                                                        bg: parts.find(p => p.startsWith('bg-')) || 'bg-gray-100',
+                                                        text: parts.find(p => p.startsWith('text-')) || 'text-gray-800'
+                                                    };
                                                 }
-                                                // 3. Check Custom Statuses (Absence/Other) via ID
+                                                // 3. Custom Statuses
                                                 else {
                                                     const statusDef = settings?.customStatuses?.find(st => st.id === s.type);
                                                     if (statusDef) {
                                                         shiftLabel = statusDef.name;
-                                                        // Resolve style from status definition
                                                         if (statusDef.color) {
-                                                            const colorObj = SHIFT_COLORS.find(c => c.hex === statusDef.color) || { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' };
-                                                            customColor = {
-                                                                bg: `bg-[${statusDef.color}]/20`, // fallback
-                                                                text: `text-[${statusDef.color}]`,
-                                                                hex: statusDef.color
-                                                            };
+                                                            colorData = { hex: statusDef.color };
                                                         } else {
-                                                            labelStyle = 'bg-gray-100 text-gray-800';
+                                                            colorData = { bg: 'bg-gray-100', text: 'text-gray-800' };
                                                         }
                                                     } else {
                                                         shiftLabel = 'Desconocido';
-                                                        labelStyle = 'bg-gray-100 text-gray-500';
                                                     }
                                                 }
 
-                                                // Apply custom color if resolved
-                                                if (customColor) {
-                                                    // If it's a real custom shift object from constants or constructed
-                                                    if (customColor.hex) {
-                                                        labelStyle = `text-white`; // We will override via style prop
-                                                    } else {
-                                                        labelStyle = `${customColor.bg} ${customColor.text} ${customColor.border || ''}`;
-                                                    }
-                                                }
+                                                // Engine Resolution
+                                                const { className, style } = getShiftStyle(colorData, settings);
+
+                                                if (s.type === 'unassigned') return null;
 
                                                 const coveredPerson = s.coveringId ? workers.find(cw => cw.id === s.coveringId) : null;
 
@@ -274,8 +272,8 @@ const ScheduleView = ({ theme, toggleTheme, viewMode, setViewMode, currentDate, 
                                                             {coveredPerson && <span className="text-[10px] text-[var(--text-secondary)] pl-2 flex items-center gap-1"><Shield size={10} /> Releva a: {getWorkerDisplayName(coveredPerson)}</span>}
                                                         </div>
                                                         <div
-                                                            className={`text-[10px] font-bold px-2 py-1 rounded ${!customColor?.hex ? labelStyle : ''}`}
-                                                            style={customColor?.hex ? { backgroundColor: `${customColor.hex}33`, color: customColor.hex, border: `1px solid ${customColor.hex}40` } : {}}
+                                                            className={`${className} border flex-shrink-0`}
+                                                            style={style}
                                                         >
                                                             {shiftLabel}
                                                         </div>

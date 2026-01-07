@@ -5,6 +5,11 @@ import { toLocalISOString } from './helpers';
 const RESTRICTED_STATUSES = ['vacation', 'sick', 'permit'];
 
 export const detectConflict = (workerId, dateStr, proposedShiftType, currentShifts, settings) => {
+    // Defaults
+    const maxConsecutive = settings.validationConfig?.maxConsecutiveDays ?? 6;
+    const enableFatigue = settings.validationConfig?.enableFatigue !== false;
+    const enableRestricted = settings.validationConfig?.enableRestricted !== false;
+
     // 1. Check for Overwriting Restricted Status
     const currentShift = currentShifts[`${workerId}_${dateStr}`];
 
@@ -13,7 +18,7 @@ export const detectConflict = (workerId, dateStr, proposedShiftType, currentShif
     // So if proposed is NOT removing/resting, and current IS restricted...
     const isProposedWork = proposedShiftType !== 'off' && proposedShiftType !== 'unassigned';
 
-    if (currentShift && isProposedWork) {
+    if (enableRestricted && currentShift && isProposedWork) {
         // Check hardcoded restricted types
         if (RESTRICTED_STATUSES.includes(currentShift.type)) {
             // Map IDs to readable names if possible
@@ -42,20 +47,18 @@ export const detectConflict = (workerId, dateStr, proposedShiftType, currentShif
 
     // 2. Fatigue Check (Consecutive Days)
     // Only check if we are assigning a work shift
-    if (isProposedWork) {
+    if (enableFatigue && isProposedWork) {
         let consecutiveDays = 0;
         const targetDate = new Date(dateStr + 'T12:00:00');
 
-        // Scan backwards 6 days
-        for (let i = 1; i <= 6; i++) {
+        // Scan backwards maxConsecutive days
+        for (let i = 1; i <= maxConsecutive; i++) {
             const d = new Date(targetDate);
             d.setDate(d.getDate() - i);
             const dStr = toLocalISOString(d);
             const s = currentShifts[`${workerId}_${dStr}`];
 
             // If it's a working shift, increment. If it's OFF/Unassigned/Absence, break.
-            // Assuming 'off', 'unassigned', 'vacation', 'sick', 'permit' are breaks.
-            // Custom shifts, morning, afternoon, night, or custom statuses that are NOT breaks count as work?
             // Simplified: If type is NOT in ['off', 'unassigned', 'vacation', 'sick', 'permit'], it is work.
             const isWork = s && !['off', 'unassigned', 'vacation', 'sick', 'permit'].includes(s.type);
 
@@ -63,12 +66,12 @@ export const detectConflict = (workerId, dateStr, proposedShiftType, currentShif
             else break;
         }
 
-        if (consecutiveDays >= 6) {
+        if (consecutiveDays >= maxConsecutive) {
             return {
                 conflict: true,
                 type: 'warning',
                 title: 'Fatiga Laboral',
-                message: `Este trabajador lleva ${consecutiveDays} días consecutivos trabajando. Asignar otro turno excede el límite recomendado de 6 días.`
+                message: `Este trabajador lleva ${consecutiveDays} días consecutivos trabajando. Asignar otro turno excede el límite configurado de ${maxConsecutive} días.`
             };
         }
     }

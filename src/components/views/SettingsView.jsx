@@ -1,5 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import TimeSelector from '../shared/TimeSelector';
+
+import { getShiftStyle } from '../../utils/styleEngine';
 import { Settings, Clipboard, ToggleRight, ToggleLeft, Palette, Zap, Building, PlusCircle, Trash2, X, Repeat, DollarSign, Shield, LogOut, Cloud, Database, Download, Upload, ShieldCheck, Info, Coffee, Check, HardDrive, AlertTriangle, ChevronUp, ChevronDown, Move } from 'lucide-react';
+import HelpTooltip from '../shared/HelpTooltip';
 import SectionHeader from '../shared/SectionHeader';
 import { APP_THEMES, SHIFT_ICONS, SHIFT_COLORS, APP_VERSION, LAST_UPDATE } from '../../config/constants';
 import { settingsSchema, validate } from '../../utils/validation';
@@ -29,6 +33,7 @@ const SettingsView = ({
     const [newShift, setNewShift] = useState({ code: '', payrollCode: '', matrixCode: '', name: '', start: '06:00', end: '14:00', icon: 'sun' });
     const [isMissingCode, setIsMissingCode] = useState(false);
     const [hasBreak, setHasBreak] = useState(false);
+    const [breakMinutes, setBreakMinutes] = useState(60);
     const [editingStatusId, setEditingStatusId] = useState(null);
     const [editedStatus, setEditedStatus] = useState(null);
     const [editingShiftId, setEditingShiftId] = useState(null);
@@ -98,6 +103,11 @@ const SettingsView = ({
         setEditedShift(prev => ({ ...prev, [name]: value }));
     };
 
+    const handleShiftEditTimeChange = (name, value) => {
+        setEditedShift(prev => ({ ...prev, [name]: value }));
+    };
+
+
     const validateAndUpdate = (updates) => {
         if (updates.payrollConfig) {
             const result = validate(settingsSchema.shape.payrollConfig, { ...settings.payrollConfig, ...updates.payrollConfig });
@@ -165,10 +175,16 @@ const SettingsView = ({
                 const response = await fetch('/data/turnos.json');
                 const data = await response.json();
 
-                // FILTER: Only match shifts that agree with our "hasBreak" setting
+                // FILTER: Only match shifts that agree with our "hasBreak" setting AND break duration
                 const validShifts = data.filter(t => {
                     if (hasBreak) {
-                        return t["Tipo descanso"] !== "Sin descanso";
+                        const hasBreakType = t["Tipo descanso"] !== "Sin descanso";
+                        // If breakMinutes is specified, also filter by it
+                        if (breakMinutes > 0) {
+                            const shiftBreakMinutes = parseInt(t["Minutos descanso"]) || 0;
+                            return hasBreakType && shiftBreakMinutes === breakMinutes;
+                        }
+                        return hasBreakType;
                     } else {
                         return t["Tipo descanso"] === "Sin descanso";
                     }
@@ -191,7 +207,7 @@ const SettingsView = ({
             }
         };
         lookup();
-    }, [newShift.start, newShift.end, activeSubTab, settings.customShifts, hasBreak]);
+    }, [newShift.start, newShift.end, activeSubTab, settings.customShifts, hasBreak, breakMinutes]);
 
     // REVERSE LOOKUP: When user types a code, auto-fill hours
     useEffect(() => {
@@ -231,8 +247,12 @@ const SettingsView = ({
                         end: match["Hora Salida"] || prev.end,
                         name: prev.name || `Turno ${match.ID}`
                     }));
-                    // Set break toggle based on match
-                    setHasBreak(match["Tipo descanso"] !== "Sin descanso");
+                    // Set break toggle and minutes based on match
+                    const matchHasBreak = match["Tipo descanso"] !== "Sin descanso";
+                    setHasBreak(matchHasBreak);
+                    if (matchHasBreak && match["Minutos descanso"]) {
+                        setBreakMinutes(parseInt(match["Minutos descanso"]) || 60);
+                    }
                     setIsMissingCode(false);
                 }
             } catch (e) {
@@ -245,6 +265,46 @@ const SettingsView = ({
         return () => clearTimeout(timer);
     }, [newShift.code, activeSubTab]);
 
+    // NEW: Auto-lookup code when EDITING an existing shift's schedule
+    useEffect(() => {
+        if (activeSubTab !== 'management' || editingShiftId === null || !editedShift) return;
+
+        const lookupEditedCode = async () => {
+            try {
+                // Check local registrations (excluding the one being edited to avoid circular matches if necessary, 
+                // but usually we want to find if this schedule ALREADY exists under another code)
+                const localMatch = (settings.customShifts || []).find(s =>
+                    s.id !== editingShiftId && s.start === editedShift.start && s.end === editedShift.end
+                );
+
+                if (localMatch) {
+                    setEditedShift(prev => ({ ...prev, code: localMatch.code }));
+                    return;
+                }
+
+                // Check master database
+                const response = await fetch('/data/turnos.json');
+                const data = await response.json();
+
+                // Simple match by time for now (ignoring break for edits to keep it fast, but could be added)
+                const match = data.find(t => t["Hora Entrada"] === editedShift.start && t["Hora Salida"] === editedShift.end);
+
+                if (match) {
+                    setEditedShift(prev => ({
+                        ...prev,
+                        code: match.ID.toString()
+                    }));
+                }
+            } catch (e) {
+                console.error("Error auto-lookup on edit:", e);
+            }
+        };
+
+        const timer = setTimeout(lookupEditedCode, 400);
+        return () => clearTimeout(timer);
+    }, [editedShift?.start, editedShift?.end, editingShiftId]);
+
+
     const reportCfg = settings.reportConfig || { showHeader: true, showDays: true, showLocation: true, showReliever: false, showShiftSummary: true };
 
     return (
@@ -254,7 +314,7 @@ const SettingsView = ({
                     <SectionHeader icon={Settings}>Configuración</SectionHeader>
                 </div>
                 <div className="flex gap-2 p-1 bg-[var(--glass-dock)] rounded-2xl border border-[var(--glass-border)] overflow-x-auto no-scrollbar">
-                    {[{ id: 'sync', label: 'Nube', icon: Cloud }, { id: 'management', label: 'Gestión', icon: Clipboard }, { id: 'payroll', label: 'Nómina', icon: DollarSign }, { id: 'app', label: 'App', icon: Palette }].map(tab => (
+                    {[{ id: 'appearance', label: 'Apariencia', icon: Palette }, { id: 'rules', label: 'Reglas', icon: ShieldCheck }, { id: 'management', label: 'Gestión', icon: Clipboard }, { id: 'payroll', label: 'Nómina', icon: DollarSign }, { id: 'sync', label: 'Nube', icon: Cloud }].map(tab => (
                         <button key={tab.id} onClick={() => setActiveSubTab(tab.id)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${activeSubTab === tab.id ? 'bg-[var(--accent-solid)] text-[var(--accent-text)] shadow-lg scale-105' : 'text-[var(--text-secondary)] hover:bg-[var(--glass-border)]'}`}>
                             <tab.icon size={14} /> {tab.label}
                         </button>
@@ -263,6 +323,212 @@ const SettingsView = ({
             </div>
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-6 pb-32 pt-6">
+                {activeSubTab === 'appearance' && (
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
+                        <div>
+                            <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><Palette size={14} /> Estilo Visual de Turnos</h3>
+
+                            <div className="glass-panel p-5 rounded-2xl space-y-8">
+                                {/* Preview Section */}
+                                <div className="p-6 bg-[var(--bg-body)] rounded-xl border border-[var(--glass-border)] flex flex-col items-center gap-4">
+                                    <span className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider">Vista Previa en Vivo</span>
+                                    <div className="flex flex-wrap justify-center gap-3">
+                                        {[
+                                            { label: 'Mañana', colorData: { bg: 'bg-blue-100', text: 'text-blue-800', hex: '#3b82f6' } },
+                                            { label: 'Tarde', colorData: { bg: 'bg-orange-100', text: 'text-orange-800', hex: '#f97316' } },
+                                            { label: 'Noche', colorData: { bg: 'bg-indigo-100', text: 'text-indigo-800', hex: '#4f46e5' } },
+                                            { label: 'Falabella', colorData: { bg: 'bg-lime-100', text: 'text-lime-800', hex: '#84cc16' } }, // Green/Lime
+                                        ].map((mock, i) => {
+                                            const { className, style } = getShiftStyle(mock.colorData, settings);
+                                            return (
+                                                <div key={i} className={className} style={style}>{mock.label}</div>
+                                            );
+                                        })}
+                                    </div>
+                                    <p className="text-[10px] text-center text-[var(--text-secondary)] max-w-xs">
+                                        Así es como se verán las etiquetas de los turnos en el calendario, reportes y listas.
+                                    </p>
+                                </div>
+
+                                {/* Controls */}
+                                <div className="space-y-4">
+                                    {/* Variant Selector */}
+                                    <div>
+                                        <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-3 block">Variante de Diseño</label>
+                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                            {['solid', 'soft', 'outline', 'minimal'].map(variant => (
+                                                <button
+                                                    key={variant}
+                                                    onClick={() => updateSettings({ appearance: { ...settings.appearance, shiftVariant: variant } })}
+                                                    className={`p-3 rounded-xl border transition-all flex flex-col items-center gap-2 ${settings.appearance?.shiftVariant === variant ? 'bg-[var(--accent-solid)]/10 border-[var(--accent-solid)] ring-1 ring-[var(--accent-solid)]' : 'border-[var(--glass-border)] hover:bg-[var(--glass-dock)]'}`}
+                                                >
+                                                    {/* Mini Preview for Button */}
+                                                    <div className={getShiftStyle({ bg: 'bg-blue-100', text: 'text-blue-600', hex: '#3b82f6' }, { appearance: { shiftVariant: variant, shiftRadius: 'md' } }).className} style={getShiftStyle({ bg: 'bg-blue-100', text: 'text-blue-600', hex: '#3b82f6' }, { appearance: { shiftVariant: variant, shiftRadius: 'md' } }).style}>Abc</div>
+                                                    <span className="text-[10px] font-bold capitalize text-[var(--text-primary)]">{variant === 'solid' ? 'Sólido' : variant === 'soft' ? 'Pastel' : variant === 'outline' ? 'Borde' : 'Mínimo'}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Radius Selector */}
+                                    <div>
+                                        <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-3 block">Redondeo</label>
+                                        <div className="grid grid-cols-5 gap-2">
+                                            {[{ id: 'none', label: '0px' }, { id: 'sm', label: '2px' }, { id: 'md', label: '6px' }, { id: 'lg', label: '12px' }, { id: 'full', label: 'Full' }].map(r => (
+                                                <button
+                                                    key={r.id}
+                                                    onClick={() => updateSettings({ appearance: { ...settings.appearance, shiftRadius: r.id } })}
+                                                    className={`p-2 rounded-xl border transition-all flex flex-col items-center gap-1 ${settings.appearance?.shiftRadius === r.id ? 'bg-[var(--accent-solid)]/10 border-[var(--accent-solid)]' : 'border-[var(--glass-border)] hover:bg-[var(--glass-dock)]'}`}
+                                                >
+                                                    <div className={`w-6 h-4 bg-current opacity-20 border border-current ${r.id === 'none' ? 'rounded-none' : r.id === 'sm' ? 'rounded-sm' : r.id === 'md' ? 'rounded-md' : r.id === 'lg' ? 'rounded-lg' : 'rounded-full'}`} />
+                                                    <span className="text-[9px] font-bold">{r.label}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* --- Restored Customization Settings --- */}
+                        <div className="animate-in fade-in slide-in-from-bottom-5 duration-500 delay-100">
+                            <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><Palette size={14} /> Tema y Entorno</h3>
+                            <div className="glass-panel p-5 rounded-2xl space-y-6">
+                                <div>
+                                    <label className="text-xs font-bold block mb-4 flex items-center justify-between">
+                                        <span>Tema Cromático</span>
+                                        <span className="text-[10px] bg-[var(--accent-solid)]/10 text-[var(--accent-solid)] px-2 py-0.5 rounded-full uppercase">Fondo & Acento</span>
+                                    </label>
+                                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
+                                        {APP_THEMES.map(t => (
+                                            <button
+                                                key={t.id}
+                                                onClick={() => updateSettings({ bgColor: t.bg, accentColor: t.accent })}
+                                                className={`group relative aspect-square rounded-2xl border-2 transition-all flex items-center justify-center ${settings.bgColor === t.bg ? 'border-[var(--accent-solid)] scale-110 shadow-lg ring-4 ring-[var(--accent-solid)]/10' : 'border-transparent opacity-70 hover:opacity-100 hover:scale-105'}`}
+                                                style={{ backgroundColor: t.bg }}
+                                                title={t.name}
+                                            >
+                                                <div className="w-4 h-4 rounded-full shadow-sm transform transition-transform group-hover:scale-110" style={{ backgroundColor: t.accent }} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="pt-6 border-t border-[var(--glass-border)]">
+                                    <label className="text-[10px] font-bold block mb-4 uppercase text-[var(--text-tertiary)] tracking-widest">Personalización Avanzada</label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-[var(--glass-dock)] p-3 rounded-2xl border border-[var(--glass-border)] flex items-center justify-between">
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase">Fondo</span>
+                                                <span className="text-xs font-mono font-bold">{settings.bgColor}</span>
+                                            </div>
+                                            <input type="color" value={settings.bgColor || '#f5f5f7'} onChange={e => updateSettings({ bgColor: e.target.value })} className="w-10 h-10 rounded-xl bg-transparent cursor-pointer border-none" />
+                                        </div>
+                                        <div className="bg-[var(--glass-dock)] p-3 rounded-2xl border border-[var(--glass-border)] flex items-center justify-between">
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase">Acento</span>
+                                                <span className="text-xs font-mono font-bold">{settings.accentColor}</span>
+                                            </div>
+                                            <input type="color" value={settings.accentColor || '#007aff'} onChange={e => updateSettings({ accentColor: e.target.value })} className="w-10 h-10 rounded-xl bg-transparent cursor-pointer border-none" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="pt-6 border-t border-[var(--glass-border)]">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <label className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)]">Transparencia</label>
+                                        <span className="text-sm font-mono font-bold text-[var(--accent-solid)] bg-[var(--accent-solid)]/10 px-2 py-1 rounded-lg">{(settings.glassIntensity || 50)}%</span>
+                                    </div>
+                                    <div className="relative group px-1">
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={settings.glassIntensity || 50}
+                                            onChange={e => updateSettings({ glassIntensity: parseInt(e.target.value) })}
+                                            className="w-full h-2 bg-[var(--glass-border)] rounded-full appearance-none cursor-pointer accent-[var(--accent-solid)] transition-all hover:h-3"
+                                        />
+                                        <div className="flex justify-between mt-2 px-1">
+                                            <span className="text-[9px] font-bold text-[var(--text-tertiary)]">SÓLIDO</span>
+                                            <span className="text-[9px] font-bold text-[var(--text-tertiary)]">CRISTAL</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="pt-6 border-t border-[var(--glass-border)] flex items-center justify-between">
+                                    <div><div className="text-sm font-bold">Movimiento Reducido</div><div className="text-[10px] text-[var(--text-secondary)]">Optimizar para dispositivos lentos</div></div>
+                                    <button onClick={() => updateSettings({ reducedMotion: !settings.reducedMotion })} className={`text-2xl transition-colors ${settings.reducedMotion ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>{settings.reducedMotion ? <ToggleRight /> : <ToggleLeft />}</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button onClick={logout} className="w-full py-3.5 rounded-xl bg-red-500/10 text-red-500 font-bold text-sm border border-red-500/20 flex items-center justify-center gap-2 mt-4 transition-all hover:bg-red-500/20 active:scale-95"><LogOut size={16} /> Cerrar Sesión</button>
+                    </div>
+                )}
+                {activeSubTab === 'rules' && (
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
+                        <div>
+                            <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><ShieldCheck size={14} /> Reglas de Validación</h3>
+                            <div className="glass-panel p-5 rounded-2xl space-y-6">
+                                <p className="text-xs text-[var(--text-tertiary)]">Personaliza cómo el sistema protege tu programación. Estas reglas activarán las alertas de conflicto.</p>
+
+                                {/* Fatigue Rules */}
+                                <div className="p-4 rounded-xl bg-[var(--bg-body)] border border-[var(--glass-border)]">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div>
+                                            <div className="text-sm font-bold flex items-center gap-2">
+                                                <Zap size={16} className="text-amber-500" />
+                                                Fatiga Laboral
+                                                <HelpTooltip text="Alerta de seguridad: Te avisa si intentas programar a un empleado por más de X días consecutivos sin ningún día de descanso." />
+                                            </div>
+                                            <div className="text-[10px] text-[var(--text-secondary)]">Alerta si se exceden los días consecutivos de trabajo.</div>
+                                        </div>
+                                        <button
+                                            onClick={() => updateSettings({ validationConfig: { ...settings.validationConfig, enableFatigue: !(settings.validationConfig?.enableFatigue ?? true) } })}
+                                            className={`text-2xl transition-all ${settings.validationConfig?.enableFatigue !== false ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}
+                                        >
+                                            {settings.validationConfig?.enableFatigue !== false ? <ToggleRight /> : <ToggleLeft />}
+                                        </button>
+                                    </div>
+
+                                    {settings.validationConfig?.enableFatigue !== false && (
+                                        <div className="animate-in fade-in slide-in-from-top-2 pt-2 border-t border-[var(--glass-border)]">
+                                            <label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase block mb-2">Días Consecutivos Máximos</label>
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="30"
+                                                    value={settings.validationConfig?.maxConsecutiveDays ?? 6}
+                                                    onChange={(e) => updateSettings({ validationConfig: { ...settings.validationConfig, maxConsecutiveDays: parseInt(e.target.value) || 6 } })}
+                                                    className="glass-input p-2 text-sm w-20 text-center font-bold"
+                                                />
+                                                <span className="text-xs text-[var(--text-secondary)]">días de trabajo antes de exigir descanso.</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Restricted Status Rules */}
+                                <div className="p-4 rounded-xl bg-[var(--bg-body)] border border-[var(--glass-border)]">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <div className="text-sm font-bold flex items-center gap-2">
+                                                <Shield size={16} className="text-red-500" />
+                                                Estados Restringidos
+                                                <HelpTooltip text="Protección contra errores: Impide o advierte si intentas asignar un turno laboral en días marcados como Vacaciones, Incapacidad o Permiso." />
+                                            </div>
+                                            <div className="text-[10px] text-[var(--text-secondary)]">Alerta al asignar trabajo en días de Vacaciones, Incapacidad, etc.</div>
+                                        </div>
+                                        <button
+                                            onClick={() => updateSettings({ validationConfig: { ...settings.validationConfig, enableRestricted: !(settings.validationConfig?.enableRestricted ?? true) } })}
+                                            className={`text-2xl transition-all ${settings.validationConfig?.enableRestricted !== false ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}
+                                        >
+                                            {settings.validationConfig?.enableRestricted !== false ? <ToggleRight /> : <ToggleLeft />}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {activeSubTab === 'sync' && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-6">
                         {/* Backup Reminder Banner */}
@@ -525,8 +791,9 @@ const SettingsView = ({
                                                         <input name="code" value={editedShift?.code || ''} onChange={handleShiftEditChange} placeholder="Cód. Turno" className="glass-input p-2 text-xs font-mono" maxLength={3} />
                                                         <input name="payrollCode" value={editedShift?.payrollCode || ''} onChange={handleShiftEditChange} placeholder="Cód. Nómina" className="glass-input p-2 text-xs font-mono" maxLength={3} />
                                                         <input name="matrixCode" value={editedShift?.matrixCode || ''} onChange={handleShiftEditChange} placeholder="Cód. Matriz" className="glass-input p-2 text-xs font-mono col-span-2" />
-                                                        <div className="flex flex-col gap-1"><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase px-1">Entrada</label><input type="time" name="start" value={editedShift?.start || '06:00'} onChange={handleShiftEditChange} className="glass-input p-2 text-xs" /></div>
-                                                        <div className="flex flex-col gap-1"><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase px-1">Salida</label><input type="time" name="end" value={editedShift?.end || '14:00'} onChange={handleShiftEditChange} className="glass-input p-2 text-xs" /></div>
+                                                        <TimeSelector label="Entrada" value={editedShift?.start || '06:00'} onChange={(val) => handleShiftEditTimeChange('start', val)} />
+                                                        <TimeSelector label="Salida" value={editedShift?.end || '14:00'} onChange={(val) => handleShiftEditTimeChange('end', val)} />
+
                                                         <div className="flex justify-end items-center gap-2 col-span-2 pt-2 border-t border-[var(--glass-border)]">
                                                             <button onClick={cancelEditingShift} className="px-3 py-1.5 hover:bg-[var(--glass-border)] rounded-lg text-xs font-bold text-[var(--text-secondary)] flex items-center gap-2"><X size={14} /> Cancelar</button>
                                                             <button onClick={saveEditingShift} className="px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 rounded-lg text-xs font-bold text-green-500 flex items-center gap-2"><Check size={14} /> Guardar</button>
@@ -605,13 +872,32 @@ const SettingsView = ({
                                     })}
                                 </div>
                                 <div className="pt-4 border-t border-[var(--glass-border)] space-y-3">
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <input placeholder="Nombre (Ej: Mañana)" value={newShift.name} onChange={e => setNewShift({ ...newShift, name: e.target.value })} className="glass-input p-2.5 text-xs col-span-2" />
-                                        <input placeholder="Código (Auto)" value={newShift.code} onChange={e => setNewShift({ ...newShift, code: e.target.value })} className={`glass-input p-2.5 text-xs font-mono transition-colors ${isMissingCode ? 'border-amber-500/50 bg-amber-500/5' : ''}`} />
-                                        <input placeholder="Cód. Nómina" value={newShift.payrollCode} onChange={e => setNewShift({ ...newShift, payrollCode: e.target.value })} className="glass-input p-2.5 text-xs font-mono" />
-                                        <input placeholder="Cód. Matriz" value={newShift.matrixCode} onChange={e => setNewShift({ ...newShift, matrixCode: e.target.value })} className="glass-input p-2.5 text-xs font-mono col-span-2" />
-                                        <div className="flex flex-col gap-1"><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase px-1">Entrada</label><input type="time" value={newShift.start} onChange={e => setNewShift({ ...newShift, start: e.target.value })} className="glass-input p-2.5 text-xs" /></div>
-                                        <div className="flex flex-col gap-1"><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase px-1">Salida</label><input type="time" value={newShift.end} onChange={e => setNewShift({ ...newShift, end: e.target.value })} className="glass-input p-2.5 text-xs" /></div>
+                                    {/* Highlighted Search/Assign Section - Relative and z-index to allow dropdowns to overlap next items */}
+                                    <div className="p-4 rounded-2xl bg-gradient-to-br from-[var(--accent-solid)]/5 to-[var(--accent-solid)]/10 border-2 border-[var(--accent-solid)]/30 shadow-lg ring-2 ring-[var(--accent-solid)]/10 relative z-20">
+
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="p-1.5 rounded-lg bg-[var(--accent-solid)] text-white">
+                                                <Zap size={14} />
+                                            </div>
+                                            <span className="text-xs font-bold text-[var(--accent-solid)] uppercase tracking-wide">Buscar y Asignar Turno</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input placeholder="Nombre (Ej: Mañana)" value={newShift.name} onChange={e => setNewShift({ ...newShift, name: e.target.value })} className="glass-input p-2.5 text-xs col-span-2" />
+                                            <div className="relative col-span-1">
+                                                <input
+                                                    placeholder="🔍 Código"
+                                                    value={newShift.code}
+                                                    onChange={e => setNewShift({ ...newShift, code: e.target.value })}
+                                                    className={`glass-input p-2.5 text-xs font-mono transition-all w-full border-2 border-[var(--accent-solid)]/50 bg-[var(--accent-solid)]/5 ring-2 ring-[var(--accent-solid)]/20 focus:ring-[var(--accent-solid)]/40 focus:border-[var(--accent-solid)] ${isMissingCode ? 'border-amber-500/50 bg-amber-500/5 ring-amber-500/20' : ''}`}
+                                                    title="Ingresa el código del turno para buscar automáticamente"
+                                                />
+                                            </div>
+                                            <input placeholder="Cód. Nómina" value={newShift.payrollCode} onChange={e => setNewShift({ ...newShift, payrollCode: e.target.value })} className="glass-input p-2.5 text-xs font-mono" />
+                                            <input placeholder="Cód. Matriz" value={newShift.matrixCode} onChange={e => setNewShift({ ...newShift, matrixCode: e.target.value })} className="glass-input p-2.5 text-xs font-mono col-span-2" />
+                                            <TimeSelector label="Entrada" value={newShift.start} onChange={val => setNewShift({ ...newShift, start: val })} />
+                                            <TimeSelector label="Salida" value={newShift.end} onChange={val => setNewShift({ ...newShift, end: val })} />
+
+                                        </div>
                                     </div>
 
                                     <div className="bg-[var(--glass-dock)] p-2 rounded-xl border border-[var(--glass-border)] flex items-center justify-between mt-3 mb-1">
@@ -619,9 +905,25 @@ const SettingsView = ({
                                             <Coffee size={14} className={hasBreak ? "text-[var(--accent-solid)]" : "text-[var(--text-tertiary)]"} />
                                             <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase">Incluye Descanso</span>
                                         </div>
-                                        <button onClick={() => setHasBreak(!hasBreak)} className={`text-xl transition-colors ${hasBreak ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>
-                                            {hasBreak ? <ToggleRight /> : <ToggleLeft />}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            {hasBreak && (
+                                                <div className="flex items-center gap-1">
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="5"
+                                                        value={breakMinutes}
+                                                        onChange={e => setBreakMinutes(parseInt(e.target.value) || 0)}
+                                                        className="glass-input p-1 w-14 text-center text-xs font-mono"
+                                                        title="Minutos de descanso"
+                                                    />
+                                                    <span className="text-[9px] text-[var(--text-tertiary)]">min</span>
+                                                </div>
+                                            )}
+                                            <button onClick={() => setHasBreak(!hasBreak)} className={`text-xl transition-colors ${hasBreak ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>
+                                                {hasBreak ? <ToggleRight /> : <ToggleLeft />}
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {isMissingCode && (
@@ -838,14 +1140,24 @@ const SettingsView = ({
                                     ))}
                                 </div>
                                 <div className="grid grid-cols-3 gap-3 pt-4 border-t border-[var(--glass-border)]">
-                                    {[{ id: 'sundaySurcharge', l: 'Dom (%)', d: 75 }, { id: 'holidaySurcharge', l: 'Fest (%)', d: 75 }, { id: 'nightSurcharge', l: 'Noct (%)', d: 35 }].map(s => (
-                                        <div key={s.id}><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">{s.l}</label>
+                                    {[{ id: 'sundaySurcharge', l: 'Dom (%)', d: 75, h: 'Porcentaje extra para Domingos.' }, { id: 'holidaySurcharge', l: 'Fest (%)', d: 75, h: 'Porcentaje extra para Festivos.' }, { id: 'nightSurcharge', l: 'Noct (%)', d: 35, h: 'Recargo por hora trabajada en horario nocturno.' }].map(s => (
+                                        <div key={s.id}>
+                                            <label className="text-[9px] text-[var(--text-tertiary)] uppercase flex items-center gap-1 mb-1">
+                                                {s.l}
+                                                <HelpTooltip text={s.h} size={10} />
+                                            </label>
                                             <input type="number" value={settings.payrollConfig?.[s.id] || s.d} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, [s.id]: parseInt(e.target.value) || 0 } })} className="glass-input p-2 w-full text-center text-xs" /></div>
                                     ))}
                                 </div>
                                 <div className="pt-4 border-t border(--glass-border) space-y-4">
                                     <div className="flex items-center justify-between">
-                                        <div><div className="text-sm font-bold">Auxilio de Transporte</div><div className="text-[10px] text-[var(--text-secondary)]">Proporcional a días trabajados</div></div>
+                                        <div>
+                                            <div className="text-sm font-bold flex items-center gap-2">
+                                                Auxilio de Transporte
+                                                <HelpTooltip text="Monto mensual fijo. Si se activa, se suma al salario base. Puede ser fijo o proporcional a los días trabajados." />
+                                            </div>
+                                            <div className="text-[10px] text-[var(--text-secondary)]">Proporcional a días trabajados</div>
+                                        </div>
                                         <button onClick={() => updateSettings({ payrollConfig: { ...settings.payrollConfig, includeTransportAllowance: !settings.payrollConfig?.includeTransportAllowance } })} className={`text-2xl transition-colors ${settings.payrollConfig?.includeTransportAllowance ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>{settings.payrollConfig?.includeTransportAllowance ? <ToggleRight /> : <ToggleLeft />}</button>
                                     </div>
                                     {settings.payrollConfig?.includeTransportAllowance && (
@@ -853,10 +1165,27 @@ const SettingsView = ({
                                     )}
                                 </div>
                                 <div className="pt-4 border-t border-[var(--glass-border)] grid grid-cols-2 gap-4">
-                                    <div><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Horas Nocturnas</label><input type="number" value={settings.payrollConfig?.nightShiftHours || 6} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, nightShiftHours: parseInt(e.target.value) || 0 } })} className="glass-input p-2 w-full text-center text-xs" /></div>
-                                    <div><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Mensaje en Nómina</label><input type="text" value={settings.payrollConfig?.customMessage || ''} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, customMessage: e.target.value } })} className="glass-input p-2 w-full text-xs" placeholder="Ej: Bono..." /></div>
-                                    <div><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Inicio Recargo Noct.</label><input type="time" value={settings.payrollConfig?.nightSurchargeStart || '21:00'} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, nightSurchargeStart: e.target.value } })} className="glass-input p-2 w-full text-center text-xs" /></div>
-                                    <div><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1">Fin Recargo Noct.</label><input type="time" value={settings.payrollConfig?.nightSurchargeEnd || '06:00'} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, nightSurchargeEnd: e.target.value } })} className="glass-input p-2 w-full text-center text-xs" /></div>
+                                    <div>
+                                        <label className="text-[9px] text-[var(--text-tertiary)] uppercase flex items-center gap-1 mb-1">
+                                            Mensaje en Nómina
+                                            <HelpTooltip text="Texto personalizado (ej. 'Bono de Metas') que aparecerá destacado en el encabezado del PDF de nómina." size={10} />
+                                        </label>
+                                        <input type="text" value={settings.payrollConfig?.customMessage || ''} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, customMessage: e.target.value } })} className="glass-input p-2 w-full text-xs" placeholder="Ej: Bono..." />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] text-[var(--text-tertiary)] uppercase flex items-center gap-1 mb-1">
+                                            Inicio Recargo Noct.
+                                            <HelpTooltip text="Hora de inicio de la ventana nocturna (ej. 21:00). Las horas trabajadas después de esto tendrán recargo." size={10} />
+                                        </label>
+                                        <input type="time" value={settings.payrollConfig?.nightSurchargeStart || '21:00'} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, nightSurchargeStart: e.target.value } })} className="glass-input p-2 w-full text-center text-xs" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[9px] text-[var(--text-tertiary)] uppercase flex items-center gap-1 mb-1">
+                                            Fin Recargo Noct.
+                                            <HelpTooltip text="Hora de fin de la ventana nocturna (ej. 06:00). Las horas trabajadas antes de esto tendrán recargo." size={10} />
+                                        </label>
+                                        <input type="time" value={settings.payrollConfig?.nightSurchargeEnd || '06:00'} onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, nightSurchargeEnd: e.target.value } })} className="glass-input p-2 w-full text-center text-xs" />
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -872,79 +1201,7 @@ const SettingsView = ({
                 )}
 
                 {/* --- TAB: APP --- */}
-                {activeSubTab === 'app' && (
-                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 space-y-8">
-                        <div>
-                            <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><Palette size={14} /> Apariencia</h3>
-                            <div className="glass-panel p-5 rounded-2xl space-y-6">
-                                <div>
-                                    <label className="text-xs font-bold block mb-4 flex items-center justify-between">
-                                        <span>Tema Cromático</span>
-                                        <span className="text-[10px] bg-[var(--accent-solid)]/10 text-[var(--accent-solid)] px-2 py-0.5 rounded-full uppercase">Fondo & Acento</span>
-                                    </label>
-                                    <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
-                                        {APP_THEMES.map(t => (
-                                            <button
-                                                key={t.id}
-                                                onClick={() => updateSettings({ bgColor: t.bg, accentColor: t.accent })}
-                                                className={`group relative aspect-square rounded-2xl border-2 transition-all flex items-center justify-center ${settings.bgColor === t.bg ? 'border-[var(--accent-solid)] scale-110 shadow-lg ring-4 ring-[var(--accent-solid)]/10' : 'border-transparent opacity-70 hover:opacity-100 hover:scale-105'}`}
-                                                style={{ backgroundColor: t.bg }}
-                                                title={t.name}
-                                            >
-                                                <div className="w-4 h-4 rounded-full shadow-sm transform transition-transform group-hover:scale-110" style={{ backgroundColor: t.accent }} />
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="pt-6 border-t border-[var(--glass-border)]">
-                                    <label className="text-[10px] font-bold block mb-4 uppercase text-[var(--text-tertiary)] tracking-widest">Personalización Avanzada</label>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="bg-[var(--glass-dock)] p-3 rounded-2xl border border-[var(--glass-border)] flex items-center justify-between">
-                                            <div className="flex flex-col">
-                                                <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase">Fondo</span>
-                                                <span className="text-xs font-mono font-bold">{settings.bgColor}</span>
-                                            </div>
-                                            <input type="color" value={settings.bgColor || '#f5f5f7'} onChange={e => updateSettings({ bgColor: e.target.value })} className="w-10 h-10 rounded-xl bg-transparent cursor-pointer border-none" />
-                                        </div>
-                                        <div className="bg-[var(--glass-dock)] p-3 rounded-2xl border border-[var(--glass-border)] flex items-center justify-between">
-                                            <div className="flex flex-col">
-                                                <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase">Acento</span>
-                                                <span className="text-xs font-mono font-bold">{settings.accentColor}</span>
-                                            </div>
-                                            <input type="color" value={settings.accentColor || '#007aff'} onChange={e => updateSettings({ accentColor: e.target.value })} className="w-10 h-10 rounded-xl bg-transparent cursor-pointer border-none" />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="pt-6 border-t border-[var(--glass-border)]">
-                                    <div className="flex items-center justify-between mb-4">
-                                        <label className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)]">Transparencia</label>
-                                        <span className="text-sm font-mono font-bold text-[var(--accent-solid)] bg-[var(--accent-solid)]/10 px-2 py-1 rounded-lg">{(settings.glassIntensity || 50)}%</span>
-                                    </div>
-                                    <div className="relative group px-1">
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            value={settings.glassIntensity || 50}
-                                            onChange={e => updateSettings({ glassIntensity: parseInt(e.target.value) })}
-                                            className="w-full h-2 bg-[var(--glass-border)] rounded-full appearance-none cursor-pointer accent-[var(--accent-solid)] transition-all hover:h-3"
-                                        />
-                                        <div className="flex justify-between mt-2 px-1">
-                                            <span className="text-[9px] font-bold text-[var(--text-tertiary)]">SÓLIDO</span>
-                                            <span className="text-[9px] font-bold text-[var(--text-tertiary)]">CRISTAL</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="pt-6 border-t border-[var(--glass-border)] flex items-center justify-between">
-                                    <div><div className="text-sm font-bold">Movimiento Reducido</div><div className="text-[10px] text-[var(--text-secondary)]">Optimizar para dispositivos lentos</div></div>
-                                    <button onClick={() => updateSettings({ reducedMotion: !settings.reducedMotion })} className={`text-2xl transition-colors ${settings.reducedMotion ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>{settings.reducedMotion ? <ToggleRight /> : <ToggleLeft />}</button>
-                                </div>
-                            </div>
-                        </div>
 
-                        <button onClick={logout} className="w-full py-3.5 rounded-xl bg-red-500/10 text-red-500 font-bold text-sm border border-red-500/20 flex items-center justify-center gap-2 mt-4 transition-all hover:bg-red-500/20 active:scale-95"><LogOut size={16} /> Cerrar Sesión</button>
-                    </div>
-                )}
             </div>
         </div >
     );

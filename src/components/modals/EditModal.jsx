@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
-import { X, MapPin, Shield, Repeat, AlertCircle } from 'lucide-react';
+import { X, MapPin, Shield, Repeat, AlertCircle, Zap } from 'lucide-react';
+import TimeSelector from '../shared/TimeSelector';
+
 import { SHIFT_TYPES, SHIFT_ICONS } from '../../config/constants';
 import Button from '../shared/Button';
 import { useToast } from '../shared/Toast';
+import { useEffect } from 'react';
+
 import { toLocalISOString, getShift } from '../../utils/helpers';
 import { shiftSchema, validate } from '../../utils/validation';
 import { detectConflict } from '../../utils/validationLogic';
@@ -162,7 +166,54 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
             return; // Stop and show warning UI
         }
 
+        // NEW: Auto-lookup code when changing times in EditModal
+        useEffect(() => {
+            if (!shift || (shift.type !== 'custom' && !['morning', 'afternoon', 'night'].includes(shift.type))) return;
+            if (!shift.start || !shift.end) return;
+
+            const lookupCode = async () => {
+                try {
+                    // Check in Custom Shifts (Settings)
+                    const localMatch = (settings.customShifts || []).find(s => s.start === shift.start && s.end === shift.end);
+                    if (localMatch) {
+                        if (shift.code !== localMatch.code) {
+                            update({
+                                ...shift,
+                                type: 'custom',
+                                code: localMatch.code,
+                                customShiftId: localMatch.id,
+                                customShiftName: localMatch.name,
+                                customShiftIcon: localMatch.icon,
+                                customShiftColor: localMatch.color
+                            });
+                        }
+                        return;
+                    }
+
+                    // Check Master DB
+                    const response = await fetch('/data/turnos.json');
+                    const data = await response.json();
+                    const match = data.find(t => t["Hora Entrada"] === shift.start && t["Hora Salida"] === shift.end);
+
+                    if (match && shift.code !== match.ID.toString()) {
+                        update({
+                            ...shift,
+                            type: 'custom',
+                            code: match.ID.toString(),
+                            customShiftName: `Turno ${match.ID}`
+                        });
+                    }
+                } catch (e) {
+                    console.error("Error in EditModal lookup:", e);
+                }
+            };
+
+            const timer = setTimeout(lookupCode, 400);
+            return () => clearTimeout(timer);
+        }, [shift?.start, shift?.end]);
+
         finalizeUpdate(s);
+
     };
 
     const applyToWeek = () => {
@@ -197,13 +248,27 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                     // If original is restricted on this day
                     if (originalDef && originalDef.allowedDays && !originalDef.allowedDays.includes(dayIndex)) {
 
-                        // Try to find substitute
+                        // SMART MATCHING: Find the closest allowed shift for this day
                         const sourceStart = timeToMin(shift.start);
-                        const bestMatch = settings.customShifts.find(cs => {
+
+                        // 1. Filter candidates allowed on this day
+                        const candidates = settings.customShifts.filter(cs => {
+                            // Must be allowed on this specific day (dayIndex)
                             if (cs.allowedDays && !cs.allowedDays.includes(dayIndex)) return false;
-                            const cStart = timeToMin(cs.start);
-                            return Math.abs(cStart - sourceStart) < 30; // 30 min tolerance
+                            return true;
                         });
+
+                        // 2. Sort by time difference
+                        let bestMatch = null;
+                        if (candidates.length > 0) {
+                            // Find the one with min abs difference
+                            candidates.sort((a, b) => {
+                                const diffA = Math.abs(timeToMin(a.start) - sourceStart);
+                                const diffB = Math.abs(timeToMin(b.start) - sourceStart);
+                                return diffA - diffB;
+                            });
+                            bestMatch = candidates[0];
+                        }
 
                         if (bestMatch) {
                             targetShift = {
@@ -218,17 +283,9 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                                 place: currentShiftPlace
                             };
                         } else {
-                            // Fallback to Standard
-                            let stdType = 'morning';
-                            if (sourceStart >= 720 && sourceStart < 1080) stdType = 'afternoon';
-                            else if (sourceStart >= 1080 || sourceStart < 360) stdType = 'night';
-
-                            targetShift = {
-                                type: stdType,
-                                start: shift.start,
-                                end: shift.end,
-                                place: currentShiftPlace
-                            };
+                            // No valid shift found for this day? 
+                            // Fallback to 'off' to respect strict rules (can't work if no shift allowed)
+                            targetShift = { type: 'off' };
                         }
                     }
                 }
@@ -309,10 +366,11 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                         </button>
                     </div>
 
+
                     {/* Custom shifts from settings */}
                     {settings.customShifts && settings.customShifts.length > 0 && (
                         <div className="mb-6">
-                            <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase mb-2">Turnos Programados</p>
+                            <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase mb-2">Turnos Personalizados</p>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                 {settings.customShifts
                                     .filter(cs => {
@@ -357,25 +415,10 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                                         );
                                     })}
                             </div>
-                        </div>
-                    )}
-
-                    {/* Legacy shift types (for backwards compatibility if no custom shifts) */}
-                    {(!settings.customShifts || settings.customShifts.length === 0) && (
-                        <div className="grid grid-cols-3 gap-2 mb-6">
-                            {Object.entries(SHIFT_TYPES).filter(([k]) => ['morning', 'afternoon', 'night'].includes(k)).map(([k, cfg]) => (
-                                <button
-                                    key={k}
-                                    onClick={() => {
-                                        const def = k === 'morning' ? { start: '08:00', end: '16:00' } : k === 'afternoon' ? { start: '14:00', end: '22:00' } : { start: '22:00', end: '06:00' };
-                                        update({ type: k, ...def, code: null, place: currentShiftPlace, displayLocation: shift.displayLocation });
-                                    }}
-                                    className={`p-3 rounded-xl flex flex-col items-center gap-1 border transition-all ${shift.type === k ? 'shift-btn-active ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
-                                >
-                                    <div className="scale-75"><cfg.icon /></div>
-                                    <span className="text-[10px] font-bold uppercase">{cfg.label}</span>
-                                </button>
-                            ))}
+                            {/* Mensaje si no hay turnos personalizados para este día */}
+                            {settings.customShifts.filter(cs => (!cs.allowedDays || cs.allowedDays.includes(date.getDay())) && (!worker.allowedShifts || worker.allowedShifts.length === 0 || worker.allowedShifts.includes(cs.code))).length === 0 && (
+                                <p className="text-[10px] text-[var(--text-tertiary)] italic">No hay turnos personalizados disponibles para este día.</p>
+                            )}
                         </div>
                     )}
 
@@ -393,11 +436,10 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
 
                     {shift.type === 'off' && (<div className="mb-6 p-3 rounded-xl border border-[var(--glass-border)] bg-white/10 flex items-center justify-between"><span className="text-xs font-bold text-[var(--text-secondary)]">👁️ Mostrar ubicación en reporte</span><div onClick={() => update({ ...shift, displayLocation: !shift.displayLocation })} className={`w-10 h-6 rounded-full flex items-center p-1 cursor-pointer transition-colors ${shift.displayLocation ? 'bg-[var(--text-primary)]' : 'bg-[var(--glass-border)]'}`}><div className={`w-4 h-4 bg-[var(--bg-body)] rounded-full shadow-md transform transition-transform ${shift.displayLocation ? 'translate-x-4' : ''}`} /></div></div>)}
                     {(shift.type === 'morning' || shift.type === 'afternoon' || shift.type === 'night' || shift.type === 'custom') && (
-                        <div className="space-y-4 mb-6">
-                            <div className="flex gap-4">
-                                <div className="flex-1"><label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-1 block">Entrada</label><input type="time" value={shift.start || ''} onChange={e => update({ ...shift, start: e.target.value })} className="w-full glass-input p-3 rounded-lg font-mono" /></div>
-                                <div className="flex-1"><label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-1 block">Salida</label><input type="time" value={shift.end || ''} onChange={e => update({ ...shift, end: e.target.value })} className="w-full glass-input p-3 rounded-lg font-mono" /></div>
-                            </div>
+                        <div className="space-y-4 mb-6 relative z-10">
+                            <TimeSelector label="Entrada" value={shift.start || ''} onChange={val => update({ ...shift, start: val })} />
+                            <TimeSelector label="Salida" value={shift.end || ''} onChange={val => update({ ...shift, end: val })} />
+
 
                             <div className="p-3 rounded-xl border border-[var(--glass-border)] bg-white/10">
                                 <label className="text-[10px] font-bold text-[var(--text-secondary)] uppercase mb-2 block flex items-center gap-2"><MapPin size={12} /> Lugar de Trabajo ({workerSedeName})</label>
@@ -428,6 +470,26 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                     <div className="pt-4 border-t border-[var(--glass-border)]"><Button onClick={applyToWeek} className="w-full bg-[var(--card-bg)] hover:bg-[var(--glass-border)] text-[var(--text-primary)] border-transparent"><Repeat size={16} /> Repetir toda la semana</Button><p className="text-[10px] text-[var(--text-tertiary)] mt-2 text-center">Esto aplicará el turno "{SHIFT_TYPES[shift.type] ? SHIFT_TYPES[shift.type].label : (settings.customStatuses?.find(s => s.id === shift.type)?.name || 'Seleccionado')}" y el lugar "{currentShiftPlace}" del Lunes al Domingo de esta semana.</p></div>
                 </div>
             </div>
+
+            {/* Validation Warning Overlay */}
+            {validationPreview && (
+                <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-enter" onClick={(e) => e.stopPropagation()}>
+                    <div className="w-[90%] max-w-sm bg-[var(--card-bg)] p-6 rounded-2xl shadow-xl border border-[var(--warning-soft)] flex flex-col gap-4">
+                        <div className="flex items-center gap-3 text-[var(--warning-text)]">
+                            <AlertCircle size={32} />
+                            <h3 className="text-lg font-bold">¡Atención!</h3>
+                        </div>
+                        <div className="space-y-2">
+                            <p className="text-sm font-medium text-[var(--text-primary)]">{validationPreview.message}</p>
+                            {validationPreview.details && <p className="text-xs text-[var(--text-secondary)]">{validationPreview.details}</p>}
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                            <Button onClick={() => setValidationPreview(null)} variant="secondary" className="flex-1">Cancelar</Button>
+                            <Button onClick={handleConfirmConflict} className="flex-1 bg-[var(--warning-text)] hover:bg-[var(--warning-text)]/90 text-white border-transparent">Confirmar</Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
