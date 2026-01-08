@@ -132,16 +132,22 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings, onEdit })
                     {/* RESTING SECTION */}
                     <div>
                         <h3 className="text-xs font-bold uppercase text-[var(--text-secondary)] mb-3 flex items-center gap-2 bg-[var(--card-bg)] backdrop-filter backdrop-blur-md w-fit px-2 py-1 rounded-lg border border-[var(--glass-border)]" style={{ backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}><Coffee size={12} /> Descansos ({resting.length})</h3>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="flex flex-col gap-2">
                             {resting.length > 0 ? resting.map(w => {
                                 const coveringReliever = workers.find(r => { const s = getShift(shifts, r.id, dateStr); return s && s.coveringId === w.id; });
                                 return (
-                                    <div key={w.id} onClick={() => handleRowClick(w.id)} className="glass-panel p-2 rounded-xl flex flex-col gap-1 opacity-80 cursor-pointer hover:bg-[var(--glass-border)] transition-colors">
-                                        <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: w.color }}></div><span className="text-sm font-medium text-[var(--text-primary)]">{w.name}</span></div>
-                                        {coveringReliever && (<div className="text-[9px] text-[var(--reliever-badge)] flex items-center gap-1 ml-4"><Shield size={8} /> Cubierto por {coveringReliever.name.split(' ')[0]}</div>)}
+                                    <div key={w.id} onClick={() => handleRowClick(w.id)} className="glass-panel p-3 rounded-xl flex items-center justify-between opacity-80 cursor-pointer hover:bg-[var(--glass-border)] transition-colors">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-2 h-8 rounded-full" style={{ backgroundColor: w.color }}></div>
+                                            <div>
+                                                <span className="text-sm font-bold text-[var(--text-primary)]">{w.name}</span>
+                                                {coveringReliever && (<div className="text-[10px] text-[var(--reliever-badge)] flex items-center gap-1"><Shield size={10} /> Cubierto por {coveringReliever.name}</div>)}
+                                            </div>
+                                        </div>
+                                        <div className="px-2 py-1 text-[10px] font-bold bg-[var(--glass-border)] text-[var(--text-secondary)] rounded shadow-sm">DESCANSO</div>
                                     </div>
                                 )
-                            }) : <p className="text-sm text-[var(--text-tertiary)] italic col-span-2 text-center py-2">Nadie descansa hoy.</p>}
+                            }) : <p className="text-sm text-[var(--text-tertiary)] italic text-center py-2">Nadie descansa hoy.</p>}
                         </div>
                     </div>
 

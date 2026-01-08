@@ -112,17 +112,17 @@ const ScheduleView = ({ theme, toggleTheme, viewMode, setViewMode, currentDate, 
                     </div>
                 </div>
             </div>
-            <div className="flex-1 overflow-y-auto no-scrollbar px-4 pb-32 pt-4">
+            <div className="flex-1 overflow-y-auto no-scrollbar px-2 sm:px-4 pb-32 pt-4">
                 {viewMode === 'monthly' ? (
-                    <div id="calendar-grid" className="grid grid-cols-7 gap-1 auto-rows-fr h-full p-2 bg-[var(--bg-body)]">
-                        {['D', 'L', 'M', 'X', 'J', 'V', 'S'].map(d => <div key={d} className="text-center text-[10px] font-bold text-[var(--text-secondary)] py-2">{d}</div>)}
+                    <div id="calendar-grid" className="grid grid-cols-7 gap-1 sm:gap-2 auto-rows-min h-auto p-2 bg-[var(--bg-body)] max-w-[1400px] mx-auto">
+                        {['D', 'L', 'M', 'X', 'J', 'V', 'S'].map(d => <div key={d} className="text-center text-[9px] sm:text-[10px] font-bold text-[var(--text-secondary)] py-1 sm:py-2 uppercase tracking-tighter sm:tracking-widest">{d}</div>)}
                         {daysToShow.map((d, i) => {
                             const dateStr = toLocalISOString(d.date);
                             const events = calendarEvents?.[dateStr] || [];
                             const isAdding = addingEventDate === dateStr;
 
                             return (
-                                <div key={i} onClick={() => !isAdding && setSelectedDayDetail(dateStr)} className={`min-h-[140px] p-2 rounded-xl border flex flex-col gap-1 cursor-pointer hover:bg-[var(--glass-border)] transition-colors relative group ${d.isCurrentMonth ? 'bg-[var(--card-bg)] border-[var(--glass-border)]' : 'opacity-30 border-[var(--glass-border)]'} ${isToday(d.date) ? 'ring-2 ring-[var(--text-primary)]' : ''}`}>
+                                <div key={i} onClick={() => !isAdding && setSelectedDayDetail(dateStr)} className={`min-h-[80px] sm:min-h-[120px] aspect-square sm:aspect-auto p-1.5 sm:p-2.5 rounded-lg sm:rounded-2xl border flex flex-col gap-0.5 sm:gap-1.5 cursor-pointer hover:bg-[var(--glass-border)] transition-all relative group ${d.isCurrentMonth ? 'bg-[var(--card-bg)] border-[var(--glass-border)]' : 'opacity-20 border-transparent'} ${isToday(d.date) ? 'ring-2 ring-[var(--text-primary)] shadow-lg scale-[1.02] z-10' : 'hover:scale-[1.02] shadow-sm'}`}>
                                     <div className="flex justify-between items-start">
                                         <div className="font-bold text-sm text-[var(--text-primary)]">{d.date.getDate()}</div>
                                         <button onClick={(e) => { e.stopPropagation(); setAddingEventDate(dateStr); }} className="opacity-0 group-hover:opacity-100 p-1 rounded-full hover:bg-[var(--glass-dock)] text-[var(--accent-solid)] transition-opacity" title="Agregar evento">+</button>

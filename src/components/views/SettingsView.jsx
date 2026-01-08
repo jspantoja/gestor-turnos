@@ -34,6 +34,8 @@ const SettingsView = ({
     const [isMissingCode, setIsMissingCode] = useState(false);
     const [hasBreak, setHasBreak] = useState(false);
     const [breakMinutes, setBreakMinutes] = useState(60);
+    const [availableBreaks, setAvailableBreaks] = useState([]); // Discovered from JSON
+    const [isCustomBreak, setIsCustomBreak] = useState(false); // Mode for manual input
     const [editingStatusId, setEditingStatusId] = useState(null);
     const [editedStatus, setEditedStatus] = useState(null);
     const [editingShiftId, setEditingShiftId] = useState(null);
@@ -72,11 +74,18 @@ const SettingsView = ({
     const startEditingShift = (shift) => {
         setEditingShiftId(shift.id);
         setEditedShift(shift);
+        // Initialize break states for editing
+        setHasBreak(shift.hasBreak || false);
+        setBreakMinutes(shift.breakMinutes || 0);
+        setIsCustomBreak(false);
     };
 
     const cancelEditingShift = () => {
         setEditingShiftId(null);
         setEditedShift(null);
+        setHasBreak(false);
+        setBreakMinutes(0);
+        setIsCustomBreak(false);
     };
 
     const saveEditingShift = () => {
@@ -89,12 +98,17 @@ const SettingsView = ({
                 s.id === editingShiftId ? {
                     ...editedShift,
                     code: editedShift.code.toUpperCase(),
-                    matrixCode: editedShift.matrixCode || editedShift.code
+                    matrixCode: editedShift.matrixCode || editedShift.code,
+                    hasBreak: hasBreak,
+                    breakMinutes: breakMinutes
                 } : s
             )
         });
         setEditingShiftId(null);
         setEditedShift(null);
+        setHasBreak(false);
+        setBreakMinutes(0);
+        setIsCustomBreak(false);
         success('Turno actualizado');
     };
 
@@ -139,12 +153,17 @@ const SettingsView = ({
                     icon: selectedIconId,
                     color: 'blue',
                     colorHex: '#3b82f6',
-                    allowedDays: [0, 1, 2, 3, 4, 5, 6]
+                    allowedDays: [0, 1, 2, 3, 4, 5, 6],
+                    hasBreak: hasBreak,
+                    breakMinutes: breakMinutes
                 }
             ]
         });
         setNewShift({ code: '', payrollCode: '', matrixCode: '', name: '', start: '06:00', end: '14:00', icon: 'sun', allowedDays: [0, 1, 2, 3, 4, 5, 6] });
         setSelectedIconId('sun');
+        setHasBreak(false);
+        setBreakMinutes(0);
+        setIsCustomBreak(false);
         success("¡Turno agregado con éxito!");
     };
 
@@ -159,151 +178,157 @@ const SettingsView = ({
     };
 
     useEffect(() => {
-        if (activeSubTab !== 'management' || editingShiftId !== null) return;
+        if (activeSubTab !== 'management') return;
+
+        // Target either newShift or editedShift depending on context
+        const isEditing = editingShiftId !== null && editedShift;
+        const targetShift = isEditing ? editedShift : newShift;
+        const setTargetShift = isEditing ? setEditedShift : setNewShift;
+
         const lookup = async () => {
             try {
                 // 1. Check local registrations first
-                const localMatch = (settings.customShifts || []).find(s => s.start === newShift.start && s.end === newShift.end);
-
-                if (localMatch) {
-                    setNewShift(prev => ({ ...prev, code: localMatch.code, name: localMatch.name }));
-                    setIsMissingCode(false);
-                    return;
-                }
+                const localMatch = (settings.customShifts || []).find(s =>
+                    s.id !== (isEditing ? editingShiftId : null) &&
+                    s.start === targetShift.start &&
+                    s.end === targetShift.end
+                );
 
                 // 2. Check master database
                 const response = await fetch('/data/turnos.json');
                 const data = await response.json();
 
-                // FILTER: Only match shifts that agree with our "hasBreak" setting AND break duration
-                const validShifts = data.filter(t => {
-                    if (hasBreak) {
-                        const hasBreakType = t["Tipo descanso"] !== "Sin descanso";
-                        // If breakMinutes is specified, also filter by it
-                        if (breakMinutes > 0) {
-                            const shiftBreakMinutes = parseInt(t["Minutos descanso"]) || 0;
-                            return hasBreakType && shiftBreakMinutes === breakMinutes;
-                        }
-                        return hasBreakType;
-                    } else {
-                        return t["Tipo descanso"] === "Sin descanso";
+                // Find ALL shifts with this schedule
+                const scheduleMatches = data.filter(t => t["Hora Entrada"] === targetShift.start && t["Hora Salida"] === targetShift.end);
+
+                // Extract unique break minutes
+                const discoveredBreaks = [...new Set(scheduleMatches.map(t => {
+                    if (t["Tipo descanso"] === "Sin descanso") return 0;
+                    return parseInt(t["Minutos descanso"]) || 0;
+                }))].sort((a, b) => a - b);
+
+                setAvailableBreaks(discoveredBreaks);
+
+                // Auto-selection logic (don't force if user is explicitly typing/selecting custom)
+                if (!isCustomBreak) {
+                    if (discoveredBreaks.length === 0) {
+                        setBreakMinutes(targetShift.breakMinutes || 0);
+                        setHasBreak((targetShift.breakMinutes || 0) > 0);
+                    } else if (!discoveredBreaks.includes(breakMinutes)) {
+                        // If current break isn't in new schedule's options, pick the most common or first
+                        const firstValid = discoveredBreaks[0];
+                        setBreakMinutes(firstValid);
+                        setHasBreak(firstValid > 0);
                     }
+                }
+
+                // Match specific shift code
+                const match = scheduleMatches.find(t => {
+                    const m = parseInt(t["Minutos descanso"]) || 0;
+                    if (breakMinutes === 0) return t["Tipo descanso"] === "Sin descanso";
+                    return t["Tipo descanso"] !== "Sin descanso" && m === breakMinutes;
                 });
 
-                const match = validShifts.find(t => t["Hora Entrada"] === newShift.start && t["Hora Salida"] === newShift.end);
-
                 if (match) {
-                    setNewShift(prev => ({
-                        ...prev,
-                        code: match.ID.toString(),
-                        name: prev.name === '' || prev.name.includes('Turno') ? `Turno ${match.ID}` : prev.name
-                    }));
+                    setTargetShift(prev => {
+                        // Avoid updating if the code is already correct to prevent circular triggers
+                        if (prev.code === match.ID.toString()) return prev;
+                        return {
+                            ...prev,
+                            code: match.ID.toString(),
+                            name: prev.name === '' || prev.name.includes('Turno') ? `Turno ${match.ID}` : prev.name
+                        };
+                    });
                     setIsMissingCode(false);
                 } else {
-                    setIsMissingCode(true);
+                    if (localMatch && localMatch.breakMinutes === breakMinutes) {
+                        setTargetShift(prev => ({ ...prev, code: localMatch.code, name: localMatch.name || prev.name }));
+                        setIsMissingCode(false);
+                    } else {
+                        setIsMissingCode(true);
+                    }
                 }
             } catch (e) {
                 console.error("Error loading turnos.json:", e);
             }
         };
-        lookup();
-    }, [newShift.start, newShift.end, activeSubTab, settings.customShifts, hasBreak, breakMinutes]);
+
+        const timer = setTimeout(lookup, isEditing ? 400 : 0);
+        return () => clearTimeout(timer);
+    }, [
+        newShift.start, newShift.end,
+        editedShift?.start, editedShift?.end,
+        editingShiftId, activeSubTab,
+        settings.customShifts, breakMinutes, isCustomBreak
+    ]);
 
     // REVERSE LOOKUP: When user types a code, auto-fill hours
     useEffect(() => {
-        if (activeSubTab !== 'management' || editingShiftId !== null) return;
-        if (!newShift.code || isNaN(parseInt(newShift.code))) return;
+        if (activeSubTab !== 'management') return;
+
+        const isEditing = editingShiftId !== null && editedShift;
+        const targetShift = isEditing ? editedShift : newShift;
+        const setTargetShift = isEditing ? setEditedShift : setNewShift;
+
+        if (!targetShift?.code || isNaN(parseInt(targetShift.code))) {
+            if (!targetShift?.code) setIsMissingCode(false);
+            return;
+        }
 
         const reverseLookup = async () => {
-            // 1. Check in Custom Shifts (User created)
-            if (settings.customShifts) {
-                const customMatch = settings.customShifts.find(s => s.code === newShift.code);
-                if (customMatch) {
-                    setNewShift(prev => ({
-                        ...prev,
-                        start: customMatch.start,
-                        end: customMatch.end,
-                        name: prev.name || customMatch.name,
-                        payrollCode: customMatch.payrollCode || prev.payrollCode,
-                        matrixCode: customMatch.matrixCode || prev.matrixCode
-                    }));
-                    // Custom shifts don't explicit store break type in the same way, but we can infer or default
-                    setHasBreak(true);
-                    setIsMissingCode(false);
-                    return; // Found locally, skip fetch
-                }
-            }
-
-            // 2. Check in Static File (turnos.json)
             try {
+                // 1. Check in Custom Shifts (User created)
+                if (settings.customShifts) {
+                    const customMatch = settings.customShifts.find(s => s.code === targetShift.code && s.id !== (isEditing ? editingShiftId : null));
+                    if (customMatch) {
+                        setTargetShift(prev => ({
+                            ...prev,
+                            start: customMatch.start,
+                            end: customMatch.end,
+                            name: prev.name || customMatch.name,
+                            payrollCode: customMatch.payrollCode || prev.payrollCode,
+                            matrixCode: customMatch.matrixCode || prev.matrixCode,
+                            breakMinutes: customMatch.breakMinutes
+                        }));
+                        setBreakMinutes(customMatch.breakMinutes || 0);
+                        setHasBreak((customMatch.breakMinutes || 0) > 0);
+                        setIsMissingCode(false);
+                        return;
+                    }
+                }
+
+                // 2. Check in Static File (turnos.json)
                 const response = await fetch('/data/turnos.json');
                 const data = await response.json();
-                const match = data.find(t => t.ID === parseInt(newShift.code));
+                const match = data.find(t => t.ID === parseInt(targetShift.code));
 
                 if (match) {
-                    setNewShift(prev => ({
+                    setTargetShift(prev => ({
                         ...prev,
                         start: match["Hora Entrada"] || prev.start,
                         end: match["Hora Salida"] || prev.end,
                         name: prev.name || `Turno ${match.ID}`
                     }));
-                    // Set break toggle and minutes based on match
+
+                    const matchBreak = parseInt(match["Minutos descanso"]) || 0;
                     const matchHasBreak = match["Tipo descanso"] !== "Sin descanso";
+
+                    setBreakMinutes(matchBreak);
                     setHasBreak(matchHasBreak);
-                    if (matchHasBreak && match["Minutos descanso"]) {
-                        setBreakMinutes(parseInt(match["Minutos descanso"]) || 60);
-                    }
+                    setIsCustomBreak(false);
                     setIsMissingCode(false);
+                } else {
+                    // Code doesn't exist anywhere
+                    setIsMissingCode(true);
                 }
             } catch (e) {
                 console.error("Error in reverse lookup:", e);
             }
         };
 
-        // Debounce to avoid excessive lookups
-        const timer = setTimeout(reverseLookup, 300);
+        const timer = setTimeout(reverseLookup, 400);
         return () => clearTimeout(timer);
-    }, [newShift.code, activeSubTab]);
-
-    // NEW: Auto-lookup code when EDITING an existing shift's schedule
-    useEffect(() => {
-        if (activeSubTab !== 'management' || editingShiftId === null || !editedShift) return;
-
-        const lookupEditedCode = async () => {
-            try {
-                // Check local registrations (excluding the one being edited to avoid circular matches if necessary, 
-                // but usually we want to find if this schedule ALREADY exists under another code)
-                const localMatch = (settings.customShifts || []).find(s =>
-                    s.id !== editingShiftId && s.start === editedShift.start && s.end === editedShift.end
-                );
-
-                if (localMatch) {
-                    setEditedShift(prev => ({ ...prev, code: localMatch.code }));
-                    return;
-                }
-
-                // Check master database
-                const response = await fetch('/data/turnos.json');
-                const data = await response.json();
-
-                // Simple match by time for now (ignoring break for edits to keep it fast, but could be added)
-                const match = data.find(t => t["Hora Entrada"] === editedShift.start && t["Hora Salida"] === editedShift.end);
-
-                if (match) {
-                    setEditedShift(prev => ({
-                        ...prev,
-                        code: match.ID.toString()
-                    }));
-                }
-            } catch (e) {
-                console.error("Error auto-lookup on edit:", e);
-            }
-        };
-
-        const timer = setTimeout(lookupEditedCode, 400);
-        return () => clearTimeout(timer);
-    }, [editedShift?.start, editedShift?.end, editingShiftId]);
-
+    }, [newShift.code, editedShift?.code, activeSubTab, editingShiftId]);
 
     const reportCfg = settings.reportConfig || { showHeader: true, showDays: true, showLocation: true, showReliever: false, showShiftSummary: true };
 
@@ -794,6 +819,49 @@ const SettingsView = ({
                                                         <TimeSelector label="Entrada" value={editedShift?.start || '06:00'} onChange={(val) => handleShiftEditTimeChange('start', val)} />
                                                         <TimeSelector label="Salida" value={editedShift?.end || '14:00'} onChange={(val) => handleShiftEditTimeChange('end', val)} />
 
+                                                        {/* BREAK SELECTOR IN EDIT MODE */}
+                                                        <div className="col-span-2 bg-[var(--glass-dock)] p-2.5 rounded-xl border border-[var(--glass-border)] space-y-2 mt-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <Coffee size={14} className={hasBreak ? "text-[var(--accent-solid)]" : "text-[var(--text-tertiary)]"} />
+                                                                <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase">Descanso (Minutos)</span>
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-1.5">
+                                                                {availableBreaks.map(mins => (
+                                                                    <button
+                                                                        key={mins}
+                                                                        onClick={() => { setBreakMinutes(mins); setHasBreak(mins > 0); setIsCustomBreak(false); }}
+                                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${breakMinutes === mins && !isCustomBreak ? 'bg-[var(--accent-solid)] text-white border-transparent' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
+                                                                    >
+                                                                        {mins === 0 ? 'Sin Descanso' : `${mins} min`}
+                                                                    </button>
+                                                                ))}
+                                                                <button
+                                                                    onClick={() => setIsCustomBreak(true)}
+                                                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${isCustomBreak ? 'bg-[var(--accent-solid)] text-white border-transparent' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
+                                                                >
+                                                                    Otro
+                                                                </button>
+                                                            </div>
+                                                            {isCustomBreak && (
+                                                                <div className="animate-in fade-in slide-in-from-top-1 flex items-center gap-2 pt-1">
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        step="5"
+                                                                        placeholder="Minutos"
+                                                                        value={breakMinutes}
+                                                                        onChange={e => {
+                                                                            const val = parseInt(e.target.value) || 0;
+                                                                            setBreakMinutes(val);
+                                                                            setHasBreak(val > 0);
+                                                                        }}
+                                                                        className="glass-input p-2 w-full text-center text-xs font-mono"
+                                                                        autoFocus
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </div>
+
                                                         <div className="flex justify-end items-center gap-2 col-span-2 pt-2 border-t border-[var(--glass-border)]">
                                                             <button onClick={cancelEditingShift} className="px-3 py-1.5 hover:bg-[var(--glass-border)] rounded-lg text-xs font-bold text-[var(--text-secondary)] flex items-center gap-2"><X size={14} /> Cancelar</button>
                                                             <button onClick={saveEditingShift} className="px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 rounded-lg text-xs font-bold text-green-500 flex items-center gap-2"><Check size={14} /> Guardar</button>
@@ -900,39 +968,101 @@ const SettingsView = ({
                                         </div>
                                     </div>
 
-                                    <div className="bg-[var(--glass-dock)] p-2 rounded-xl border border-[var(--glass-border)] flex items-center justify-between mt-3 mb-1">
-                                        <div className="flex items-center gap-2">
-                                            <Coffee size={14} className={hasBreak ? "text-[var(--accent-solid)]" : "text-[var(--text-tertiary)]"} />
-                                            <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase">Incluye Descanso</span>
-                                        </div>
-                                        <div className="flex items-center gap-2">
+                                    <div className="bg-[var(--glass-dock)] p-4 rounded-2xl border border-[var(--glass-border)] space-y-3 mt-3 mb-1">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Coffee size={16} className={hasBreak ? "text-[var(--accent-solid)]" : "text-[var(--text-tertiary)]"} />
+                                                <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wide">Minutos de Descanso</span>
+                                            </div>
                                             {hasBreak && (
-                                                <div className="flex items-center gap-1">
+                                                <div className="px-2 py-0.5 bg-[var(--accent-solid)]/10 text-[var(--accent-solid)] rounded text-[10px] font-bold">
+                                                    {breakMinutes} MIN
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex flex-wrap gap-2">
+                                            {availableBreaks.map(mins => (
+                                                <button
+                                                    key={mins}
+                                                    onClick={() => {
+                                                        setBreakMinutes(mins);
+                                                        setHasBreak(mins > 0);
+                                                        setIsCustomBreak(false);
+                                                    }}
+                                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${breakMinutes === mins && !isCustomBreak ? 'bg-[var(--accent-solid)] text-white border-transparent shadow-md scale-105' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
+                                                >
+                                                    {mins === 0 ? 'Sin Descanso' : `${mins} min`}
+                                                </button>
+                                            ))}
+                                            <button
+                                                onClick={() => {
+                                                    setIsCustomBreak(true);
+                                                    if (!availableBreaks.includes(breakMinutes)) {
+                                                        // Keep current if already custom
+                                                    } else {
+                                                        setBreakMinutes(60); // Default for custom
+                                                    }
+                                                    setHasBreak(true);
+                                                }}
+                                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border ${isCustomBreak ? 'bg-[var(--accent-solid)] text-white border-transparent shadow-md scale-105' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
+                                            >
+                                                Personalizado
+                                            </button>
+                                        </div>
+
+                                        {isCustomBreak && (
+                                            <div className="animate-in fade-in slide-in-from-top-2 pt-2 border-t border-[var(--glass-border)] border-dashed">
+                                                <div className="flex items-center gap-3">
                                                     <input
                                                         type="number"
                                                         min="0"
                                                         step="5"
                                                         value={breakMinutes}
-                                                        onChange={e => setBreakMinutes(parseInt(e.target.value) || 0)}
-                                                        className="glass-input p-1 w-14 text-center text-xs font-mono"
-                                                        title="Minutos de descanso"
+                                                        onChange={e => {
+                                                            const val = parseInt(e.target.value) || 0;
+                                                            setBreakMinutes(val);
+                                                            setHasBreak(val > 0);
+                                                        }}
+                                                        className="glass-input p-2.5 w-24 text-center text-sm font-mono focus:ring-2 focus:ring-[var(--accent-solid)]/50"
+                                                        placeholder="0"
+                                                        autoFocus
                                                     />
-                                                    <span className="text-[9px] text-[var(--text-tertiary)]">min</span>
+                                                    <span className="text-xs text-[var(--text-tertiary)] italic">Ingresa los minutos de descanso manualmente</span>
                                                 </div>
-                                            )}
-                                            <button onClick={() => setHasBreak(!hasBreak)} className={`text-xl transition-colors ${hasBreak ? 'text-[var(--accent-solid)]' : 'text-[var(--text-tertiary)]'}`}>
-                                                {hasBreak ? <ToggleRight /> : <ToggleLeft />}
-                                            </button>
-                                        </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {isMissingCode && (
-                                        <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 animate-in fade-in slide-in-from-top-2">
-                                            <div className="flex items-center gap-2 mb-2">
+                                        <div className="p-3 bg-amber-500/10 rounded-xl border border-amber-500/20 animate-in fade-in slide-in-from-top-2 flex flex-col gap-2">
+                                            <div className="flex items-center gap-2">
                                                 <Zap size={14} className="text-amber-500" />
                                                 <span className="text-[10px] font-bold text-amber-600 uppercase">Horario no registrado</span>
                                             </div>
-                                            <p className="text-[10px] text-amber-700/80 mb-3 leading-relaxed">Este horario no existe en la base de datos principal. Al agregarlo, se registrará en tu sistema para futuras búsquedas.</p>
+                                            <p className="text-[10px] text-amber-700/80 leading-relaxed">Este horario no existe en la base de datos principal. Puedes registrarlo como un turno personalizado.</p>
+                                            <button
+                                                onClick={() => {
+                                                    const isEditing = editingShiftId !== null && editedShift;
+                                                    const setTargetShift = isEditing ? setEditedShift : setNewShift;
+
+                                                    setTargetShift(prev => ({
+                                                        ...prev,
+                                                        name: prev.name || `Nuevo Turno ${prev.code || ''}`.trim()
+                                                    }));
+
+                                                    setTimeout(() => {
+                                                        const nameInput = document.querySelector('input[placeholder="Nombre (Ej: Mañana)"]');
+                                                        if (nameInput) {
+                                                            nameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                            nameInput.focus();
+                                                        }
+                                                    }, 50);
+                                                }}
+                                                className="self-start px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl text-[10px] font-bold hover:shadow-lg hover:scale-105 transition-all shadow-md active:scale-95 flex items-center gap-2"
+                                            >
+                                                ✨ Registrar como Turno Nuevo
+                                            </button>
                                         </div>
                                     )}
 

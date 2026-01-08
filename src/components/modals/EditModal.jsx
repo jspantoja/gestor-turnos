@@ -135,6 +135,52 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
         toast.success('Turno actualizado');
     };
 
+    // NEW: Auto-lookup code when changing times in EditModal
+    useEffect(() => {
+        if (!shift || (shift.type !== 'custom' && !['morning', 'afternoon', 'night'].includes(shift.type))) return;
+        if (!shift.start || !shift.end) return;
+
+        const lookupCode = async () => {
+            try {
+                // Check in Custom Shifts (Settings)
+                const localMatch = (settings.customShifts || []).find(s => s.start === shift.start && s.end === shift.end);
+                if (localMatch) {
+                    if (shift.code !== localMatch.code) {
+                        finalizeUpdate({
+                            ...shift,
+                            type: 'custom',
+                            code: localMatch.code,
+                            customShiftId: localMatch.id,
+                            customShiftName: localMatch.name,
+                            customShiftIcon: localMatch.icon,
+                            customShiftColor: localMatch.color
+                        });
+                    }
+                    return;
+                }
+
+                // Check Master DB
+                const response = await fetch('/data/turnos.json');
+                const data = await response.json();
+                const match = data.find(t => t["Hora Entrada"] === shift.start && t["Hora Salida"] === shift.end);
+
+                if (match && shift.code !== match.ID.toString()) {
+                    finalizeUpdate({
+                        ...shift,
+                        type: 'custom',
+                        code: match.ID.toString(),
+                        customShiftName: `Turno ${match.ID}`
+                    });
+                }
+            } catch (e) {
+                console.error("Error in EditModal lookup:", e);
+            }
+        };
+
+        const timer = setTimeout(lookupCode, 400);
+        return () => clearTimeout(timer);
+    }, [shift?.start, shift?.end]);
+
     const update = (s) => {
         // Schema Validation
         const result = validate(shiftSchema, {
@@ -166,54 +212,7 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
             return; // Stop and show warning UI
         }
 
-        // NEW: Auto-lookup code when changing times in EditModal
-        useEffect(() => {
-            if (!shift || (shift.type !== 'custom' && !['morning', 'afternoon', 'night'].includes(shift.type))) return;
-            if (!shift.start || !shift.end) return;
-
-            const lookupCode = async () => {
-                try {
-                    // Check in Custom Shifts (Settings)
-                    const localMatch = (settings.customShifts || []).find(s => s.start === shift.start && s.end === shift.end);
-                    if (localMatch) {
-                        if (shift.code !== localMatch.code) {
-                            update({
-                                ...shift,
-                                type: 'custom',
-                                code: localMatch.code,
-                                customShiftId: localMatch.id,
-                                customShiftName: localMatch.name,
-                                customShiftIcon: localMatch.icon,
-                                customShiftColor: localMatch.color
-                            });
-                        }
-                        return;
-                    }
-
-                    // Check Master DB
-                    const response = await fetch('/data/turnos.json');
-                    const data = await response.json();
-                    const match = data.find(t => t["Hora Entrada"] === shift.start && t["Hora Salida"] === shift.end);
-
-                    if (match && shift.code !== match.ID.toString()) {
-                        update({
-                            ...shift,
-                            type: 'custom',
-                            code: match.ID.toString(),
-                            customShiftName: `Turno ${match.ID}`
-                        });
-                    }
-                } catch (e) {
-                    console.error("Error in EditModal lookup:", e);
-                }
-            };
-
-            const timer = setTimeout(lookupCode, 400);
-            return () => clearTimeout(timer);
-        }, [shift?.start, shift?.end]);
-
         finalizeUpdate(s);
-
     };
 
     const applyToWeek = () => {
@@ -333,8 +332,8 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
 
                 {/* Scrollable Content */}
                 <div className="flex-1 overflow-y-auto p-5 sm:p-6 pb-32">
-                    {/* Dynamic Status Types from Settings */}
-                    <div className="grid grid-cols-4 gap-2 mb-4">
+                    {/* Dynamic Status Types from Settings - FULL WIDTH */}
+                    <div className="grid grid-cols-2 gap-2 mb-4">
                         {(settings.customStatuses || []).map(status => {
                             const statusIcon = SHIFT_ICONS.find(i => i.id === status.icon);
                             const IconComp = statusIcon ? statusIcon.component : null;
@@ -342,7 +341,7 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                                 <button
                                     key={status.id}
                                     onClick={() => update({ type: status.id, statusCode: status.code, start: '', end: '', code: null, place: currentShiftPlace, displayLocation: shift.displayLocation })}
-                                    className={`p-2 rounded-xl flex flex-col items-center gap-1 border transition-all ${shift.type === status.id ? 'ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
+                                    className={`p-3 rounded-xl flex items-center justify-center gap-2 border transition-all ${shift.type === status.id ? 'ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
                                     style={shift.type === status.id ? { backgroundColor: `${status.color}20`, borderColor: status.color, color: status.color } : {}}
                                 >
                                     {IconComp ? (
@@ -352,17 +351,17 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                                     ) : (
                                         <div className="w-4 h-4 rounded-full" style={{ backgroundColor: status.color }}></div>
                                     )}
-                                    <span className="text-[9px] font-bold uppercase">{status.name}</span>
+                                    <span className="text-[10px] font-bold uppercase">{status.name}</span>
                                 </button>
                             );
                         })}
                         {/* Fallback: Sin Asignar */}
                         <button
                             onClick={() => update({ type: 'unassigned', start: '', end: '', code: null, place: currentShiftPlace })}
-                            className={`p-2 rounded-xl flex flex-col items-center gap-1 border transition-all ${shift.type === 'unassigned' ? 'shift-btn-active ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
+                            className={`p-3 rounded-xl flex items-center justify-center gap-2 border transition-all ${shift.type === 'unassigned' ? 'shift-btn-active ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
                         >
                             <div className="scale-75"><SHIFT_TYPES.unassigned.icon /></div>
-                            <span className="text-[9px] font-bold uppercase">Sin Asignar</span>
+                            <span className="text-[10px] font-bold uppercase">Sin Asignar</span>
                         </button>
                     </div>
 
@@ -371,7 +370,7 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                     {settings.customShifts && settings.customShifts.length > 0 && (
                         <div className="mb-6">
                             <p className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase mb-2">Turnos Personalizados</p>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <div className="flex flex-col gap-2">
                                 {settings.customShifts
                                     .filter(cs => {
                                         // Filter by allowed days if defined
@@ -400,17 +399,19 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                                                     place: currentShiftPlace,
                                                     displayLocation: shift.displayLocation
                                                 })}
-                                                className={`p-3 rounded-xl flex items-center gap-2 border transition-all ${shift.type === 'custom' && shift.code === cs.code ? 'shift-btn-active ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
-                                                style={{ borderLeftWidth: '4px', borderLeftColor: cs.colorHex || 'var(--glass-border)' }}
+                                                className={`p-4 rounded-xl flex items-center gap-4 border transition-all w-full ${shift.type === 'custom' && shift.code === cs.code ? 'shift-btn-active ring-2 ring-[var(--accent-solid)] ring-offset-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
+                                                style={{ borderLeftWidth: '6px', borderLeftColor: cs.colorHex || 'var(--glass-border)' }}
                                             >
-                                                <div className="p-1.5 rounded-lg" style={{ backgroundColor: cs.colorHex ? `${cs.colorHex}20` : 'var(--accent-solid)/10', color: cs.colorHex || 'var(--accent-solid)' }}>
-                                                    <IconComp size={18} />
+                                                <div className="p-2 rounded-xl" style={{ backgroundColor: cs.colorHex ? `${cs.colorHex}20` : 'var(--accent-solid)/10', color: cs.colorHex || 'var(--accent-solid)' }}>
+                                                    <IconComp size={20} />
                                                 </div>
                                                 <div className="text-left flex-1 min-w-0">
-                                                    <div className="text-xs font-bold truncate">{cs.name}</div>
-                                                    <div className="text-[9px] text-[var(--text-tertiary)]">{cs.start} - {cs.end}</div>
+                                                    <div className="text-sm font-bold truncate">{cs.name}</div>
+                                                    <div className="text-xs text-[var(--text-tertiary)]">{cs.start} - {cs.end}</div>
                                                 </div>
-                                                <span className="text-sm font-mono font-bold" style={{ color: cs.colorHex || 'var(--accent-solid)' }}>{cs.code}</span>
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-xs font-mono font-bold px-2 py-1 rounded bg-[var(--glass-border)]" style={{ color: cs.colorHex || 'var(--accent-solid)' }}>{cs.code}</span>
+                                                </div>
                                             </button>
                                         );
                                     })}
@@ -484,8 +485,8 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
                             {validationPreview.details && <p className="text-xs text-[var(--text-secondary)]">{validationPreview.details}</p>}
                         </div>
                         <div className="flex gap-2 mt-2">
-                            <Button onClick={() => setValidationPreview(null)} variant="secondary" className="flex-1">Cancelar</Button>
-                            <Button onClick={handleConfirmConflict} className="flex-1 bg-[var(--warning-text)] hover:bg-[var(--warning-text)]/90 text-white border-transparent">Confirmar</Button>
+                            <Button onClick={() => setValidationPreview(null)} className="flex-1">Cancelar</Button>
+                            <Button onClick={handleConfirmConflict} active className="flex-1 !bg-[var(--warning-text)] !text-white border-transparent">Confirmar</Button>
                         </div>
                     </div>
                 </div>
