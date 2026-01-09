@@ -632,8 +632,8 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
 
                 // Totals
                 rowData.push(
-                    (stats.sundays * 7.33).toFixed(1), // DOM
-                    (stats.holidays * 7.33).toFixed(1), // FEST
+                    (stats.sundays * sunHours).toFixed(1), // DOM
+                    (stats.holidays * holHours).toFixed(1), // FEST
                     stats.nightHours.toFixed(1) // NOCT
                 );
 

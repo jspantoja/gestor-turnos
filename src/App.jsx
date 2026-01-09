@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { Calendar, Users, FileText, Coffee, Settings, UserCheck, Loader, LogOut, Activity } from 'lucide-react';
 
 // --- FIREBASE IMPORTS ---
@@ -72,9 +72,14 @@ const App = () => {
     const [publicWorkerId, setPublicWorkerId] = useState(() => {
         const params = new URLSearchParams(window.location.search);
         const vid = params.get('view') === 'public' ? params.get('workerId') : null;
-        return vid ? parseInt(vid, 10) : null;
+        return vid; // Keep as string for comparison
     });
     const isPublicView = !!publicWorkerId;
+
+    const publicWorker = useMemo(() => {
+        if (!isPublicView || !workers.length) return null;
+        return workers.find(w => String(w.id) === String(publicWorkerId));
+    }, [isPublicView, workers, publicWorkerId]);
 
     // Clear modals when switching tabs
     useEffect(() => {
@@ -203,8 +208,18 @@ const App = () => {
                                 <div className="flex-1 flex items-center justify-center flex-col gap-4">
                                     <Loader className="animate-spin text-[var(--accent-solid)]" size={48} /><p className="text-[var(--text-secondary)] text-sm font-bold animate-pulse">Cargando...</p>
                                 </div>
-                            ) : workers.find(w => w.id === publicWorkerId) ? (
-                                <WorkerProfile worker={workers.find(w => w.id === publicWorkerId)} onBack={() => { }} setWorkers={() => { }} shifts={shifts} setShifts={() => { }} autoScheduleReliever={() => { }} sedes={settings.sedes} readOnly={true} />
+                            ) : publicWorker ? (
+                                <WorkerProfile
+                                    worker={publicWorker}
+                                    onBack={() => { }}
+                                    setWorkers={() => { }}
+                                    shifts={shifts}
+                                    setShifts={() => { }}
+                                    autoScheduleReliever={() => { }}
+                                    sedes={settings.sedes}
+                                    settings={settings}
+                                    readOnly={true}
+                                />
                             ) : (
                                 <div className="flex-1 flex items-center justify-center flex-col gap-4 text-center px-6">
                                     <div className="w-20 h-20 rounded-full bg-[var(--glass-dock)] flex items-center justify-center text-[var(--text-tertiary)] mb-2"><UserCheck size={40} /></div>

@@ -48,6 +48,19 @@ const calculateSimpleNightHours = (shiftStartStr, shiftEndStr, nightStartStr, ni
     return totalOverlap / 60;
 };
 
+// Helper to calculate total shift duration in hours
+const calculateShiftDuration = (startStr, endStr) => {
+    if (!startStr || !endStr) return 0;
+    const toMin = (s) => {
+        const [h, m] = s.split(':').map(Number);
+        return h * 60 + m;
+    };
+    let s = toMin(startStr);
+    let e = toMin(endStr);
+    if (e < s) e += 24 * 60;
+    return (e - s) / 60;
+};
+
 export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, settings, options = {}) => {
     const cfg = settings.payrollConfig || {};
     const hourlyRate = cfg.hourlyRate || 6000;
@@ -60,8 +73,8 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
 
     let programmedHours = 0;
     let absenceHours = 0;
-    let sundaysCount = 0;
-    let holidaysCount = 0;
+    let sundaysCount = 0; // Will become weighted: 1.0 for full day, actualHours/standard if < 7h
+    let holidaysCount = 0; // Same as above
 
     // New metrics
     let totalNightHours = 0;
@@ -87,12 +100,7 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
                 daysWorkedCount++;
 
                 // Exclude Surcharges Check (Per Shift)
-                const isExcluded = s.excludeSurcharges === true;
-
-                if (isSunday && !isExcluded) sundaysCount++;
-                if (isHoliday && !isSunday && !isExcluded) holidaysCount++;
-
-                // Calculate Night Hours for this specific shift
+                // Determine actual hours worked in this shift to check for the "7h rule"
                 let sStart = s.start;
                 let sEnd = s.end;
 
@@ -102,6 +110,32 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
                     else if (s.type === 'afternoon') { sStart = '14:00'; sEnd = '22:00'; }
                     else if (s.type === 'night') { sStart = '22:00'; sEnd = '06:00'; }
                 }
+
+                const actualShiftHours = calculateShiftDuration(sStart, sEnd);
+                const standardDayHours = hours; // The value from hoursPerWeekday for this day
+
+                // Exclude Surcharges Check (Per Shift)
+                const isExcluded = s.excludeSurcharges === true;
+
+                if (!isExcluded) {
+                    // Logic: If worked < 7 hours, pay exactly those hours of surcharge.
+                    // If worked >= 7 hours, pay the "Full Day" standard value (e.g. 7.33).
+                    // We achieve this by weighting the count: 
+                    // weightedCount = worked < 7 ? (actualHours / standardForThisDay) : 1.0
+
+                    if (isSunday || isHoliday) {
+                        const weight = actualShiftHours < 7 ? (actualShiftHours / standardDayHours) : 1.0;
+
+                        if (isSunday) {
+                            sundaysCount += weight;
+                        } else {
+                            holidaysCount += weight;
+                        }
+                    }
+                }
+
+                // Calculate Night Hours for this specific shift
+                // Use already calculated sStart/sEnd
 
                 if (sStart && sEnd && !isExcluded) {
                     const nHours = calculateSimpleNightHours(sStart, sEnd, cfg.nightSurchargeStart, cfg.nightSurchargeEnd);
