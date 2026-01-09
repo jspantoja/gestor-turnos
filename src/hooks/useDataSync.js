@@ -44,6 +44,82 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
     const hasCloudSynced = useRef(false);
     const [hasInitialLoad, setHasInitialLoad] = useState(false);
 
+    // --- HISTORIAL (Undo/Redo) ---
+    const undoStack = useRef([]);
+    const redoStack = useRef([]);
+    const isHistoryAction = useRef(false);
+
+    const takeSnapshot = useCallback(() => {
+        return {
+            workers: JSON.parse(JSON.stringify(workers)),
+            shifts: JSON.parse(JSON.stringify(shifts)),
+            settings: JSON.parse(JSON.stringify(settings)),
+            holidays: JSON.parse(JSON.stringify(Array.from(holidays))),
+            weeklyNotes: JSON.parse(JSON.stringify(weeklyNotes)),
+            weeklyChecklists: JSON.parse(JSON.stringify(weeklyChecklists)),
+            payrollSnapshots: JSON.parse(JSON.stringify(payrollSnapshots)),
+            payrollExclusions: JSON.parse(JSON.stringify(payrollExclusions || {})),
+            calendarEvents: JSON.parse(JSON.stringify(calendarEvents || {})),
+        };
+    }, [workers, shifts, settings, holidays, weeklyNotes, weeklyChecklists, payrollSnapshots, payrollExclusions, calendarEvents]);
+
+    const applySnapshot = useCallback((s) => {
+        if (!s) return;
+        setWorkers(s.workers);
+        setShifts(s.shifts);
+        setSettings(s.settings);
+        setHolidays(new Set(s.holidays));
+        setWeeklyNotes(s.weeklyNotes);
+        setWeeklyChecklists(s.weeklyChecklists);
+        setPayrollSnapshots(s.payrollSnapshots);
+        setPayrollExclusions(s.payrollExclusions);
+        setCalendarEvents(s.calendarEvents);
+    }, []);
+
+    const recordState = useCallback(() => {
+        if (isHistoryAction.current || isRemoteUpdate.current || isLoading || !hasInitialLoad) return;
+        const snapshot = takeSnapshot();
+        undoStack.current.push(snapshot);
+        if (undoStack.current.length > 50) undoStack.current.shift();
+        redoStack.current = [];
+    }, [takeSnapshot, isLoading, hasInitialLoad]);
+
+    const undo = useCallback(() => {
+        if (undoStack.current.length === 0) return false;
+        isHistoryAction.current = true;
+        const current = takeSnapshot();
+        redoStack.current.push(current);
+        const prev = undoStack.current.pop();
+        applySnapshot(prev);
+        setTimeout(() => { isHistoryAction.current = false; }, 200);
+        return true;
+    }, [takeSnapshot, applySnapshot]);
+
+    const redo = useCallback(() => {
+        if (redoStack.current.length === 0) return false;
+        isHistoryAction.current = true;
+        const current = takeSnapshot();
+        undoStack.current.push(current);
+        const next = redoStack.current.pop();
+        applySnapshot(next);
+        setTimeout(() => { isHistoryAction.current = false; }, 200);
+        return true;
+    }, [takeSnapshot, applySnapshot]);
+
+    // Wrappers para setters que graban historia
+    const setWorkersWithUndo = useCallback((val) => { recordState(); setWorkers(val); }, [recordState]);
+    const setShiftsWithUndo = useCallback((val) => { recordState(); setShifts(val); }, [recordState]);
+    const setHolidaysWithUndo = useCallback((val) => { recordState(); setHolidays(val); }, [recordState]);
+    const setWeeklyNotesWithUndo = useCallback((val) => { recordState(); setWeeklyNotes(val); }, [recordState]);
+    const setWeeklyChecklistsWithUndo = useCallback((val) => { recordState(); setWeeklyChecklists(val); }, [recordState]);
+    const setPayrollSnapshotsWithUndo = useCallback((val) => { recordState(); setPayrollSnapshots(val); }, [recordState]);
+    const setPayrollExclusionsWithUndo = useCallback((val) => { recordState(); setPayrollExclusions(val); }, [recordState]);
+    const setCalendarEventsWithUndo = useCallback((val) => { recordState(); setCalendarEvents(val); }, [recordState]);
+    const updateSettingsWithUndo = useCallback((updates) => {
+        recordState();
+        setSettings(prev => ({ ...prev, ...updates }));
+    }, [recordState]);
+
     // --- EFECTO PRINCIPAL: Cargar Datos y Sincronizar ---
     useEffect(() => {
         if (!firebaseReady || !auth || !user || !appId) {
@@ -373,10 +449,11 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
     const updateSettings = (updates) => { setSettings(prev => ({ ...prev, ...updates })); };
 
     return {
-        settings, updateSettings, holidays, setHolidays, workers, setWorkers, shifts, setShifts,
-        weeklyNotes, setWeeklyNotes, weeklyChecklists, setWeeklyChecklists,
-        payrollSnapshots, setPayrollSnapshots,
-        calendarEvents, setCalendarEvents,
-        isSynced, isLoading, forceCloudUpload, forceCloudDownload, exportData, importData
+        settings, updateSettings: updateSettingsWithUndo, holidays, setHolidays: setHolidaysWithUndo, workers, setWorkers: setWorkersWithUndo, shifts, setShifts: setShiftsWithUndo,
+        weeklyNotes, setWeeklyNotes: setWeeklyNotesWithUndo, weeklyChecklists, setWeeklyChecklists: setWeeklyChecklistsWithUndo,
+        payrollSnapshots, setPayrollSnapshots: setPayrollSnapshotsWithUndo,
+        calendarEvents, setCalendarEvents: setCalendarEventsWithUndo,
+        isSynced, isLoading, forceCloudUpload, forceCloudDownload, exportData, importData,
+        undo, redo, canUndo: undoStack.current.length > 0, canRedo: redoStack.current.length > 0
     };
 };

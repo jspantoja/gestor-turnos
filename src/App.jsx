@@ -52,7 +52,8 @@ const App = () => {
         payrollSnapshots, setPayrollSnapshots,
         calendarEvents, setCalendarEvents,
         isSynced, isLoading: dataLoading,
-        forceCloudUpload, forceCloudDownload, exportData, importData
+        forceCloudUpload, forceCloudDownload, exportData, importData,
+        undo, redo
     } = useDataSync({ user, auth, db, appId: dynamicAppId, firebaseReady });
 
     // --- Schedule Hook ---
@@ -86,6 +87,31 @@ const App = () => {
     useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
 
     const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+
+    // --- UNDO/REDO KEYBOARD SHORTCUTS ---
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            // Evitar interferencia con la edición de texto estándar
+            const isInput = ['INPUT', 'TEXTAREA'].includes(e.target.tagName) || e.target.isContentEditable;
+            if (isInput) return;
+
+            const isZ = e.key.toLowerCase() === 'z';
+            const isY = e.key.toLowerCase() === 'y';
+            const isCtrl = e.ctrlKey || e.metaKey;
+            const isShift = e.shiftKey;
+
+            if (isCtrl && isZ && !isShift) {
+                e.preventDefault();
+                if (undo()) success("Deshacer: Cambio revertido");
+            } else if (isCtrl && (isY || (isZ && isShift))) {
+                e.preventDefault();
+                if (redo()) success("Rehacer: Cambio restaurado");
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [undo, redo, success]);
 
     // --- HANDLERS PARA SINCRONIZACIÓN ---
     const handleToggleCloud = async (enabled) => {
