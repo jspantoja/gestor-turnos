@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import TimeSelector from '../shared/TimeSelector';
 
 import { getShiftStyle } from '../../utils/styleEngine';
-import { Settings, Clipboard, ToggleRight, ToggleLeft, Palette, Zap, Building, PlusCircle, Trash2, X, Repeat, DollarSign, Shield, LogOut, Cloud, Database, Download, Upload, ShieldCheck, Info, Coffee, Check, HardDrive, AlertTriangle, ChevronUp, ChevronDown, Move } from 'lucide-react';
+import { Settings, Clipboard, ToggleRight, ToggleLeft, Palette, Zap, Building, PlusCircle, Trash2, X, Repeat, DollarSign, Shield, LogOut, Cloud, Database, Download, Upload, ShieldCheck, Info, Coffee, Check, HardDrive, AlertTriangle, AlertCircle, ChevronUp, ChevronDown, Move } from 'lucide-react';
 import HelpTooltip from '../shared/HelpTooltip';
 import SectionHeader from '../shared/SectionHeader';
 import { APP_THEMES, SHIFT_ICONS, SHIFT_COLORS, APP_VERSION, LAST_UPDATE } from '../../config/constants';
@@ -1263,6 +1263,82 @@ const SettingsView = ({
                             <h3 className="text-xs font-bold text-[var(--text-secondary)] uppercase mb-4 flex items-center gap-2"><DollarSign size={14} /> Configuración de Nómina</h3>
                             <div className="glass-panel p-5 rounded-2xl space-y-6">
                                 <div><label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase block mb-1">Tarifa por Hora (COP)</label><input type="number" value={settings.payrollConfig?.hourlyRate || 6000} onChange={e => validateAndUpdate({ payrollConfig: { ...settings.payrollConfig, hourlyRate: parseInt(e.target.value) || 0 } })} className="glass-input p-3 w-full text-center font-mono text-lg shadow-inner" /></div>
+
+                                {/* Colombian Weekly Hours Reduction */}
+                                <div className="pt-4 border-t border-[var(--glass-border)]">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-[var(--text-tertiary)] uppercase flex items-center gap-2">
+                                                Jornada Semanal Legal (Ley Colombia)
+                                                <HelpTooltip text="Colombia está reduciendo la jornada de 48h a 42h gradualmente. Configura aquí el límite actual para calcular correctamente los recargos de domingos y festivos." />
+                                            </label>
+                                            {settings.payrollConfig?.weeklyHoursTarget && settings.payrollConfig.weeklyHoursTarget < 48 && (
+                                                <div className="text-[10px] text-amber-500 font-bold mt-1">
+                                                    Reducción: {((1 - settings.payrollConfig.weeklyHoursTarget / 48) * 100).toFixed(1)}%
+                                                </div>
+                                            )}
+                                        </div>
+                                        <select
+                                            value={settings.payrollConfig?.weeklyHoursTarget || 48}
+                                            onChange={e => updateSettings({ payrollConfig: { ...settings.payrollConfig, weeklyHoursTarget: parseInt(e.target.value) } })}
+                                            className="glass-input p-2 text-center font-mono text-sm rounded-xl min-w-[100px]"
+                                        >
+                                            <option value={48}>48 horas</option>
+                                            <option value={47}>47 horas</option>
+                                            <option value={46}>46 horas</option>
+                                            <option value={44}>44 horas</option>
+                                            <option value={42}>42 horas</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Standard Distribution Button + Validation */}
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <button
+                                        onClick={() => {
+                                            const target = settings.payrollConfig?.weeklyHoursTarget || 48;
+                                            const dailyHours = Math.round((target / 6) * 100) / 100;
+                                            updateSettings({
+                                                payrollConfig: {
+                                                    ...settings.payrollConfig,
+                                                    hoursPerWeekday: {
+                                                        monday: dailyHours,
+                                                        tuesday: dailyHours,
+                                                        wednesday: dailyHours,
+                                                        thursday: dailyHours,
+                                                        friday: dailyHours,
+                                                        saturday: dailyHours,
+                                                        sunday: dailyHours,
+                                                        holiday: dailyHours
+                                                    }
+                                                }
+                                            });
+                                        }}
+                                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--glass-dock)] border border-[var(--glass-border)] text-xs font-bold text-[var(--text-secondary)] hover:bg-[var(--accent-solid)] hover:text-white hover:border-transparent transition-all"
+                                    >
+                                        <Zap size={14} />
+                                        Distribución Estándar
+                                    </button>
+
+                                    {/* Validation Warning */}
+                                    {(() => {
+                                        const dailySum = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+                                            .reduce((sum, day) => sum + (settings.payrollConfig?.hoursPerWeekday?.[day] || 7), 0);
+                                        const weeklyTarget = settings.payrollConfig?.weeklyHoursTarget || 48;
+                                        const diff = Math.abs(dailySum - weeklyTarget);
+
+                                        if (diff > 0.5) {
+                                            return (
+                                                <div className="flex items-center gap-2 text-amber-500 text-[10px] font-bold bg-amber-500/10 px-3 py-2 rounded-xl border border-amber-500/20">
+                                                    <AlertCircle size={14} />
+                                                    <span>Días suman {dailySum.toFixed(1)}h vs jornada de {weeklyTarget}h</span>
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    })()}
+                                </div>
+
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 border-t border-[var(--glass-border)]">
                                     {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'holiday'].map(k => (
                                         <div key={k}><label className="text-[9px] text-[var(--text-tertiary)] uppercase block mb-1 font-bold">{k.substring(0, 3)}</label>

@@ -12,6 +12,7 @@ export const useDataSync = ({ user, auth, db, appId, firebaseReady }) => {
             hourlyRate: 6000, sundaySurcharge: 75, holidaySurcharge: 75, nightSurcharge: 35, nightShiftHours: 6,
             includeTransportAllowance: true, transportAllowance: 200000,
             hoursPerWeekday: { monday: 7, tuesday: 7.5, wednesday: 7.5, thursday: 7.5, friday: 7.5, saturday: 7, sunday: 7.33 },
+            weeklyHoursTarget: 48, // Colombian law: gradually reducing from 48 to 42
             customMessage: "JUAN SEBASTIAN PANTOJA 50.000 DE COORDINACION"
         },
         cloudMode: true,

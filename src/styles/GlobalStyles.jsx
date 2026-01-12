@@ -301,13 +301,15 @@ const GlobalStyles = ({ accentColor, glassIntensity, reducedMotion, settings = {
       background: radial-gradient(circle at bottom, rgba(0, 0, 0, 0.3) 0%, transparent 70%);
     }
 
-    /* Hides dock on mobile when a modal is open */
-    @media (max-width: 640px) {
+    /* Hides dock globally when a modal is open */
       .dock-container.dock-hidden {
         transform: translateX(-50%) translateY(120%);
         opacity: 0;
         pointer-events: none;
       }
+
+    /* Mobile specific adjustments if needed */
+    @media (max-width: 640px) {
     }
 
     /* Dock Menu - Layout Only (Glass from unified system above) */

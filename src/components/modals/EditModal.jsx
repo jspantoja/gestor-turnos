@@ -310,7 +310,7 @@ const EditModal = ({ selectedCell, setSelectedCell, workers, shifts, setShifts, 
 
     return (
         <div
-            className="modal-overlay z-[80] sm:items-center items-end animate-enter"
+            className="modal-overlay z-[1000] sm:items-center items-end animate-enter"
             onClick={() => setSelectedCell(null)}
         >
             <div className="w-full sm:w-[500px] liquid-glass p-0 rounded-t-[32px] sm:rounded-[32px] m-0 sm:m-4 max-h-[80dvh] sm:max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>

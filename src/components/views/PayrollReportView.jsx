@@ -420,8 +420,13 @@ const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDat
 // --- CORRECCIÓN VISUAL (Componente PayrollRow completo, Línea ~230) ---
 const PayrollRow = ({ worker, daysToShow, shifts, holidays, setSelectedCell, stats, settings }) => {
     const hoursCfg = settings.payrollConfig?.hoursPerWeekday || {};
-    const sunHours = hoursCfg.sunday || 7.33;
-    const holHours = hoursCfg.holiday || 7.33;
+
+    // Colombian law reduction factor
+    const weeklyHoursTarget = settings.payrollConfig?.weeklyHoursTarget || 48;
+    const reductionFactor = weeklyHoursTarget / 48;
+
+    const sunHours = (hoursCfg.sunday || 7.33) * reductionFactor;
+    const holHours = (hoursCfg.holiday || 7.33) * reductionFactor;
 
     const totalSun = (stats.sundays || 0) * sunHours;
     const totalHol = (stats.holidays || 0) * holHours;

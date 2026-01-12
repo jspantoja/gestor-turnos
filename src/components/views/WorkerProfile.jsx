@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, Camera, CheckSquare, Share2, Building, MapPin, Briefcase, Calendar, ChevronLeft, ChevronRight, FileText, Plus, X, Image, MessageSquare, Check, Trash2, StickyNote, RefreshCw, Layers, Eye, AlertCircle, Coffee, Shield, Zap, UserCheck, Activity } from 'lucide-react';
 import { EMPLOYEE_COLORS, SHIFT_TYPES, SHIFT_ICONS, SHIFT_COLORS } from '../../config/constants';
 import { toLocalISOString, addDays, isToday, getShift } from '../../utils/helpers';
@@ -687,7 +688,7 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
                             })}
                         </div>
 
-                        {/* --- QUICK SHIFT SELECTOR --- */}
+                        {/* --- QUICK SHIFT SELECTOR MODAL --- */}
                         {selectedDateStr && !readOnly && (() => {
                             const shift = getShift(shifts, worker.id, selectedDateStr);
                             const date = new Date(selectedDateStr + 'T12:00:00');
@@ -700,208 +701,218 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
                                 }));
                             };
 
-                            return (
-                                <div className="mt-6 p-6 rounded-[2rem] bg-[var(--glass-dock)] border-2 border-[var(--accent-solid)]/30 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-500 relative overflow-hidden group/selector">
-                                    <div className="absolute top-0 left-0 w-1.5 h-full bg-[var(--accent-solid)] shadow-[4px_0_15px_rgba(var(--accent-solid-rgb),0.3)]"></div>
-                                    <button
-                                        onClick={() => setSelectedDateStr(null)}
-                                        className="absolute top-5 right-5 p-2 rounded-full bg-[var(--glass-dock)] border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-red-500 hover:border-red-500/30 transition-all hover:rotate-90 shadow-sm"
+                            return createPortal(
+                                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 font-sans text-base" onClick={() => setSelectedDateStr(null)}>
+                                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300"></div>
+                                    <div
+                                        className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[2rem] bg-[var(--bg-body)] border border-[var(--glass-border)] shadow-2xl shadow-[rgba(0,0,0,0.2)] animate-in fade-in zoom-in-95 slide-in-from-bottom-6 duration-300"
+                                        onClick={(e) => e.stopPropagation()}
                                     >
-                                        <X size={18} />
-                                    </button>
-
-                                    <div className="flex items-center gap-5 mb-8">
-                                        <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[var(--accent-solid)] to-[var(--accent-solid)]/80 text-white shadow-xl shadow-[var(--accent-solid)]/20 animate-pulse-slow">
-                                            <Zap size={22} fill="currentColor" />
-                                        </div>
-                                        <div>
-                                            <h4 className="text-lg font-black text-[var(--text-primary)] leading-tight tracking-tight">Asignación de Turno</h4>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <Calendar size={12} className="text-[var(--accent-solid)]" />
-                                                <p className="text-[11px] text-[var(--text-tertiary)] uppercase font-black tracking-[0.2em]">
-                                                    {date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Status types from settings */}
-                                    <div className="grid grid-cols-2 gap-3 mb-8">
-                                        {(settings.customStatuses || []).map(status => {
-                                            const statusIcon = SHIFT_ICONS.find(i => i.id === status.icon);
-                                            const IconComp = statusIcon ? statusIcon.component : null;
-                                            const isSelected = shift.type === status.id;
-                                            return (
+                                        <div className="p-8">
+                                            {/* Header */}
+                                            <div className="flex items-start justify-between mb-8">
+                                                <div className="flex items-center gap-5">
+                                                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[var(--accent-solid)] to-[var(--accent-solid)]/80 text-white shadow-lg shadow-[var(--accent-solid)]/25">
+                                                        <Zap size={24} fill="currentColor" />
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-xl font-black text-[var(--text-primary)] leading-none tracking-tight mb-1.5">Asignación de Turno</h4>
+                                                        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--glass-border)]/30 border border-[var(--glass-border)] w-fit">
+                                                            <Calendar size={12} className="text-[var(--accent-solid)]" />
+                                                            <p className="text-[11px] text-[var(--text-secondary)] uppercase font-bold tracking-wider">
+                                                                {date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                                 <button
-                                                    key={status.id}
-                                                    onClick={() => update({
-                                                        type: status.id,
-                                                        statusCode: status.code,
-                                                        start: '',
-                                                        end: '',
-                                                        code: null,
-                                                        place: currentShiftPlace,
-                                                        displayLocation: shift.displayLocation
-                                                    })}
-                                                    className={`p-4 rounded-2xl flex items-center justify-center gap-3 border-2 transition-all duration-300 ${isSelected ? 'scale-[1.03] shadow-lg z-10' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)] hover:border-[var(--text-tertiary)]/30'}`}
-                                                    style={isSelected ? { backgroundColor: `${status.color}15`, borderColor: status.color, color: status.color, boxShadow: `0 10px 20px -5px ${status.color}30` } : {}}
+                                                    onClick={() => setSelectedDateStr(null)}
+                                                    className="p-2.5 rounded-full bg-[var(--glass-border)]/20 text-[var(--text-secondary)] hover:bg-[var(--text-primary)] hover:text-[var(--bg-body)] transition-all duration-300 hover:rotate-90"
                                                 >
-                                                    {IconComp ? (
-                                                        <div className="w-6 h-6 flex items-center justify-center" style={{ color: isSelected ? status.color : 'inherit' }}>
-                                                            <IconComp size={20} strokeWidth={isSelected ? 2.5 : 2} />
-                                                        </div>
-                                                    ) : (
-                                                        <div className="w-5 h-5 rounded-full shadow-inner" style={{ backgroundColor: status.color }}></div>
-                                                    )}
-                                                    <span className={`text-xs font-black uppercase tracking-wider ${isSelected ? 'opacity-100' : 'opacity-80'}`}>{status.name}</span>
+                                                    <X size={20} />
                                                 </button>
-                                            );
-                                        })}
-                                        {/* Fallback: Sin Asignar */}
-                                        <button
-                                            onClick={() => update({ type: 'unassigned', start: '', end: '', code: null, place: currentShiftPlace })}
-                                            className={`p-4 rounded-2xl flex items-center justify-center gap-3 border-2 transition-all duration-300 ${shift.type === 'unassigned' ? 'bg-[var(--text-primary)]/5 border-[var(--text-primary)] scale-[1.03] shadow-lg' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]'}`}
-                                        >
-                                            <div className="opacity-70"><SHIFT_TYPES.unassigned.icon /></div>
-                                            <span className="text-xs font-black uppercase tracking-wider">Sin Asignar</span>
-                                        </button>
-                                    </div>
-
-                                    {/* Custom shifts from settings */}
-                                    {settings.customShifts && settings.customShifts.length > 0 && (
-                                        <div className="mb-8">
-                                            <div className="flex items-center justify-between mb-4 px-1">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="p-1.5 rounded-lg bg-[var(--glass-border)]/30">
-                                                        <Layers size={14} className="text-[var(--text-secondary)]" />
-                                                    </div>
-                                                    <p className="text-[11px] font-black text-[var(--text-secondary)] uppercase tracking-[0.15em]">Turnos Disponibles</p>
-                                                </div>
-                                                <div className="h-[1px] flex-1 mx-4 bg-gradient-to-r from-[var(--glass-border)] to-transparent"></div>
                                             </div>
 
-                                            <div className="grid grid-cols-1 gap-2.5 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                                {settings.customShifts
-                                                    .filter(cs => {
-                                                        const dayOfWeek = date.getDay();
-                                                        const isAllowedByDay = !cs.allowedDays || cs.allowedDays.includes(dayOfWeek);
-                                                        const isAllowedByWorker = !worker.allowedShifts || worker.allowedShifts.length === 0 || worker.allowedShifts.includes(cs.code);
-                                                        return isAllowedByDay && isAllowedByWorker;
-                                                    })
-                                                    .map((cs) => {
-                                                        const shiftIcon = SHIFT_ICONS.find(i => i.id === cs.icon);
-                                                        const IconComp = shiftIcon ? shiftIcon.component : SHIFT_ICONS[0].component;
-                                                        const isActive = shift.type === 'custom' && shift.code === cs.code;
-                                                        return (
-                                                            <button
-                                                                key={cs.id}
-                                                                onClick={() => update({
-                                                                    type: 'custom',
-                                                                    code: cs.code,
-                                                                    start: cs.start,
-                                                                    end: cs.end,
-                                                                    customShiftId: cs.id,
-                                                                    customShiftName: cs.name,
-                                                                    customShiftIcon: cs.icon,
-                                                                    customShiftColor: cs.color,
-                                                                    place: currentShiftPlace,
-                                                                    displayLocation: shift.displayLocation
-                                                                })}
-                                                                className={`group/shift p-4 rounded-2xl flex items-center gap-5 border-2 transition-all duration-300 w-full relative overflow-hidden ${isActive ? 'bg-[var(--bg-body)] border-[var(--accent-solid)] shadow-md translate-x-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:border-[var(--text-tertiary)]/30 hover:bg-[var(--glass-border)]/10'}`}
-                                                                style={isActive ? { borderLeftWidth: '8px', borderLeftColor: cs.colorHex || 'var(--accent-solid)' } : { borderLeftColor: cs.colorHex || 'var(--glass-border)' }}
+                                            {/* Status Grid */}
+                                            <div className="grid grid-cols-2 gap-3 mb-8">
+                                                {(settings.customStatuses || []).map(status => {
+                                                    const statusIcon = SHIFT_ICONS.find(i => i.id === status.icon);
+                                                    const IconComp = statusIcon ? statusIcon.component : null;
+                                                    const isSelected = shift.type === status.id;
+                                                    return (
+                                                        <button
+                                                            key={status.id}
+                                                            onClick={() => update({
+                                                                type: status.id,
+                                                                statusCode: status.code,
+                                                                start: '',
+                                                                end: '',
+                                                                code: null,
+                                                                place: currentShiftPlace,
+                                                                displayLocation: shift.displayLocation
+                                                            })}
+                                                            className={`relative group p-4 rounded-2xl flex flex-col items-center justify-center gap-3 border transition-all duration-300 ${isSelected ? 'bg-[var(--bg-body)] border-[var(--glass-border)] shadow-xl scale-[1.02] z-10' : 'bg-[var(--glass-dock)] border-transparent hover:border-[var(--glass-border)] hover:bg-[var(--glass-panel)]'}`}
+                                                            style={isSelected ? { borderColor: status.color } : {}}
+                                                        >
+                                                            {isSelected && <div className="absolute inset-0 rounded-2xl opacity-5" style={{ backgroundColor: status.color }}></div>}
+
+                                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${isSelected ? 'scale-110 shadow-lg' : 'group-hover:scale-110 bg-white/5'}`}
+                                                                style={{ backgroundColor: isSelected ? status.color : undefined, color: isSelected ? '#fff' : status.color }}
                                                             >
-                                                                {isActive && <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[var(--accent-solid)]/5"></div>}
+                                                                {IconComp ? <IconComp size={20} strokeWidth={2.5} /> : <div className="w-5 h-5 rounded-full" style={{ backgroundColor: status.color }}></div>}
+                                                            </div>
+                                                            <span className="text-xs font-black uppercase tracking-wider text-[var(--text-secondary)]" style={isSelected ? { color: status.color } : {}}>{status.name}</span>
+                                                        </button>
+                                                    );
+                                                })}
 
-                                                                <div className={`p-2.5 rounded-xl flex-none transition-transform duration-500 ${isActive ? 'scale-110 rotate-3' : 'group-hover/shift:scale-105'}`}
-                                                                    style={{ backgroundColor: cs.colorHex ? `${cs.colorHex}15` : 'var(--accent-solid)/10', color: cs.colorHex || 'var(--accent-solid)' }}>
-                                                                    <IconComp size={22} strokeWidth={isActive ? 2.5 : 2} />
-                                                                </div>
+                                                {/* Fallback: Sin Asignar */}
+                                                <button
+                                                    onClick={() => update({ type: 'unassigned', start: '', end: '', code: null, place: currentShiftPlace })}
+                                                    className={`col-span-2 p-3 mt-2 rounded-xl flex items-center justify-center gap-2 border-2 border-dashed transition-all duration-300 ${shift.type === 'unassigned' ? 'border-[var(--text-primary)] text-[var(--text-primary)] bg-[var(--text-primary)]/5' : 'border-[var(--glass-border)] text-[var(--text-tertiary)] hover:border-[var(--text-secondary)] hover:text-[var(--text-secondary)] hover:bg-[var(--glass-dock)]'}`}
+                                                >
+                                                    <div className="opacity-70"><SHIFT_TYPES.unassigned.icon size={16} /></div>
+                                                    <span className="text-[11px] font-black uppercase tracking-widest">Sin Turno Asignado</span>
+                                                </button>
+                                            </div>
 
-                                                                <div className="text-left flex-1 min-w-0 z-10">
-                                                                    <div className={`text-sm font-black truncate ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{cs.name}</div>
-                                                                    <div className="flex items-center gap-2 mt-0.5">
-                                                                        <div className="flex items-center gap-1 text-[11px] text-[var(--text-tertiary)] font-bold">
-                                                                            <span>{cs.start}</span>
-                                                                            <span className="opacity-30">—</span>
-                                                                            <span>{cs.end}</span>
+                                            {/* Custom shifts from settings */}
+                                            {settings.customShifts && settings.customShifts.length > 0 && (
+                                                <div className="mb-8">
+                                                    <div className="flex items-center justify-between mb-4 px-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="p-1.5 rounded-lg bg-[var(--glass-border)]/30">
+                                                                <Layers size={14} className="text-[var(--text-secondary)]" />
+                                                            </div>
+                                                            <p className="text-[11px] font-black text-[var(--text-secondary)] uppercase tracking-[0.15em]">Turnos Disponibles</p>
+                                                        </div>
+                                                        <div className="h-[1px] flex-1 mx-4 bg-gradient-to-r from-[var(--glass-border)] to-transparent"></div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 gap-2.5 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                                        {settings.customShifts
+                                                            .filter(cs => {
+                                                                const dayOfWeek = date.getDay();
+                                                                const isAllowedByDay = !cs.allowedDays || cs.allowedDays.includes(dayOfWeek);
+                                                                const isAllowedByWorker = !worker.allowedShifts || worker.allowedShifts.length === 0 || worker.allowedShifts.includes(cs.code);
+                                                                return isAllowedByDay && isAllowedByWorker;
+                                                            })
+                                                            .map((cs) => {
+                                                                const shiftIcon = SHIFT_ICONS.find(i => i.id === cs.icon);
+                                                                const IconComp = shiftIcon ? shiftIcon.component : SHIFT_ICONS[0].component;
+                                                                const isActive = shift.type === 'custom' && shift.code === cs.code;
+                                                                return (
+                                                                    <button
+                                                                        key={cs.id}
+                                                                        onClick={() => update({
+                                                                            type: 'custom',
+                                                                            code: cs.code,
+                                                                            start: cs.start,
+                                                                            end: cs.end,
+                                                                            customShiftId: cs.id,
+                                                                            customShiftName: cs.name,
+                                                                            customShiftIcon: cs.icon,
+                                                                            customShiftColor: cs.color,
+                                                                            place: currentShiftPlace,
+                                                                            displayLocation: shift.displayLocation
+                                                                        })}
+                                                                        className={`group/shift p-4 rounded-2xl flex items-center gap-5 border-2 transition-all duration-300 w-full relative overflow-hidden ${isActive ? 'bg-[var(--bg-body)] border-[var(--accent-solid)] shadow-md translate-x-1' : 'bg-transparent text-[var(--text-secondary)] border-[var(--glass-border)] hover:border-[var(--text-tertiary)]/30 hover:bg-[var(--glass-border)]/10'}`}
+                                                                        style={isActive ? { borderLeftWidth: '8px', borderLeftColor: cs.colorHex || 'var(--accent-solid)' } : { borderLeftColor: cs.colorHex || 'var(--glass-border)' }}
+                                                                    >
+                                                                        {isActive && <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[var(--accent-solid)]/5"></div>}
+
+                                                                        <div className={`p-2.5 rounded-xl flex-none transition-transform duration-500 ${isActive ? 'scale-110 rotate-3' : 'group-hover/shift:scale-105'}`}
+                                                                            style={{ backgroundColor: cs.colorHex ? `${cs.colorHex}15` : 'var(--accent-solid)/10', color: cs.colorHex || 'var(--accent-solid)' }}>
+                                                                            <IconComp size={22} strokeWidth={isActive ? 2.5 : 2} />
                                                                         </div>
-                                                                    </div>
-                                                                </div>
 
-                                                                <div className="flex-none z-10">
-                                                                    <span className={`text-[10px] font-black px-2.5 py-1.5 rounded-xl shadow-sm transition-all ${isActive ? 'bg-[var(--accent-solid)] text-white' : 'bg-[var(--glass-border)] text-[var(--text-secondary)] group-hover/shift:bg-[var(--text-tertiary)] group-hover/shift:text-white'}`}
-                                                                        style={isActive ? { backgroundColor: cs.colorHex } : {}}>
-                                                                        {cs.code}
-                                                                    </span>
-                                                                </div>
-                                                            </button>
-                                                        );
-                                                    })}
-                                            </div>
-                                        </div>
-                                    )}
+                                                                        <div className="text-left flex-1 min-w-0 z-10">
+                                                                            <div className={`text-sm font-black truncate ${isActive ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{cs.name}</div>
+                                                                            <div className="flex items-center gap-2 mt-0.5">
+                                                                                <div className="flex items-center gap-1 text-[11px] text-[var(--text-tertiary)] font-bold">
+                                                                                    <span>{cs.start}</span>
+                                                                                    <span className="opacity-30">—</span>
+                                                                                    <span>{cs.end}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
 
-                                    {/* Manual time/place selectors */}
-                                    {(shift.type === 'morning' || shift.type === 'afternoon' || shift.type === 'night' || shift.type === 'custom') && (
-                                        <div className="space-y-6 mt-6 p-5 rounded-[1.5rem] border-2 border-[var(--glass-border)] bg-[var(--bg-body)]/60 shadow-inner block animate-in zoom-in-95 duration-300">
-                                            <div className="grid grid-cols-2 gap-5">
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-black text-[var(--text-tertiary)] uppercase tracking-widest pl-1">Entrada</label>
-                                                    <TimeSelector value={shift.start || ''} onChange={val => update({ ...shift, start: val })} />
+                                                                        <div className="flex-none z-10">
+                                                                            <span className={`text-[10px] font-black px-2.5 py-1.5 rounded-xl shadow-sm transition-all ${isActive ? 'bg-[var(--accent-solid)] text-white' : 'bg-[var(--glass-border)] text-[var(--text-secondary)] group-hover/shift:bg-[var(--text-tertiary)] group-hover/shift:text-white'}`}
+                                                                                style={isActive ? { backgroundColor: cs.colorHex } : {}}>
+                                                                                {cs.code}
+                                                                            </span>
+                                                                        </div>
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                    </div>
                                                 </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] font-black text-[var(--text-tertiary)] uppercase tracking-widest pl-1">Salida</label>
-                                                    <TimeSelector value={shift.end || ''} onChange={val => update({ ...shift, end: val })} />
-                                                </div>
-                                            </div>
+                                            )}
 
-                                            <div className="space-y-3">
-                                                <div className="flex items-center justify-between pl-1">
-                                                    <label className="text-[10px] font-black text-[var(--text-tertiary)] uppercase tracking-widest flex items-center gap-2">
-                                                        <MapPin size={12} className="text-[var(--accent-solid)]" /> Lugar de Trabajo
-                                                    </label>
-                                                    <span className="text-[9px] font-bold text-[var(--text-tertiary)]">Sede: {worker.sede || worker.location}</span>
-                                                </div>
-                                                <div className="flex gap-2 flex-wrap">
-                                                    {availablePlaces.length > 0 ? availablePlaces.map(place => {
-                                                        const isChecked = currentShiftPlace === place;
-                                                        return (
-                                                            <button
-                                                                key={place}
-                                                                onClick={() => update({ ...shift, place: place })}
-                                                                className={`px-4 py-2.5 rounded-xl text-[11px] font-black border-2 transition-all duration-300 flex-1 min-w-[120px] shadow-sm ${isChecked ? 'bg-[var(--text-primary)] text-[var(--bg-body)] border-[var(--text-primary)] translate-y-[-2px] shadow-lg' : 'bg-white/5 text-[var(--text-secondary)] border-[var(--glass-border)] hover:border-[var(--text-tertiary)]'}`}
-                                                            >
-                                                                {place}
-                                                            </button>
-                                                        );
-                                                    }) : <div className="w-full py-4 text-center rounded-xl bg-orange-500/5 border border-orange-500/20 text-orange-500 text-[10px] font-bold italic">No hay áreas configuradas en esta sede</div>}
-                                                </div>
-                                            </div>
-
-                                            <div className="pt-4 flex flex-col gap-3">
-                                                {/* Surcharges toggle */}
-                                                <div className="flex items-center justify-between p-4 rounded-2xl bg-[var(--bg-body)] border border-[var(--glass-border)] shadow-sm">
-                                                    <div className="flex items-center gap-4">
-                                                        <div className={`p-2.5 rounded-xl transition-all duration-500 ${!shift.excludeSurcharges ? 'bg-green-500/10 text-green-500 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'bg-red-500/10 text-red-500'}`}>
-                                                            <Shield size={18} fill={!shift.excludeSurcharges ? "currentColor" : "none"} />
+                                            {/* Manual time/place selectors */}
+                                            {(shift.type === 'morning' || shift.type === 'afternoon' || shift.type === 'night' || shift.type === 'custom') && (
+                                                <div className="space-y-6 mt-6 p-5 rounded-[1.5rem] border-2 border-[var(--glass-border)] bg-[var(--bg-body)]/60 shadow-inner block animate-in zoom-in-95 duration-300">
+                                                    <div className="grid grid-cols-2 gap-5">
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-black text-[var(--text-tertiary)] uppercase tracking-widest pl-1">Entrada</label>
+                                                            <TimeSelector value={shift.start || ''} onChange={val => update({ ...shift, start: val })} />
                                                         </div>
-                                                        <div>
-                                                            <p className="text-[11px] font-black text-[var(--text-primary)] uppercase tracking-wide">Recargos y Suplementos</p>
-                                                            <p className="text-[10px] text-[var(--text-tertiary)] font-bold mt-0.5">{!shift.excludeSurcharges ? 'Cálculo automático habilitado' : 'Excluido de cálculo de extras'}</p>
+                                                        <div className="space-y-2">
+                                                            <label className="text-[10px] font-black text-[var(--text-tertiary)] uppercase tracking-widest pl-1">Salida</label>
+                                                            <TimeSelector value={shift.end || ''} onChange={val => update({ ...shift, end: val })} />
                                                         </div>
                                                     </div>
-                                                    <button
-                                                        onClick={() => update({ ...shift, excludeSurcharges: !shift.excludeSurcharges })}
-                                                        className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all duration-300 shadow-md ${!shift.excludeSurcharges ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-red-500 text-white hover:bg-red-600'}`}
-                                                    >
-                                                        {!shift.excludeSurcharges ? 'Activos' : 'Desactivar'}
-                                                    </button>
+
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between pl-1">
+                                                            <label className="text-[10px] font-black text-[var(--text-tertiary)] uppercase tracking-widest flex items-center gap-2">
+                                                                <MapPin size={12} className="text-[var(--accent-solid)]" /> Lugar de Trabajo
+                                                            </label>
+                                                            <span className="text-[9px] font-bold text-[var(--text-tertiary)]">Sede: {worker.sede || worker.location}</span>
+                                                        </div>
+                                                        <div className="flex gap-2 flex-wrap">
+                                                            {availablePlaces.length > 0 ? availablePlaces.map(place => {
+                                                                const isChecked = currentShiftPlace === place;
+                                                                return (
+                                                                    <button
+                                                                        key={place}
+                                                                        onClick={() => update({ ...shift, place: place })}
+                                                                        className={`px-4 py-2.5 rounded-xl text-[11px] font-black border-2 transition-all duration-300 flex-1 min-w-[120px] shadow-sm ${isChecked ? 'bg-[var(--text-primary)] text-[var(--bg-body)] border-[var(--text-primary)] translate-y-[-2px] shadow-lg' : 'bg-white/5 text-[var(--text-secondary)] border-[var(--glass-border)] hover:border-[var(--text-tertiary)]'}`}
+                                                                    >
+                                                                        {place}
+                                                                    </button>
+                                                                );
+                                                            }) : <div className="w-full py-4 text-center rounded-xl bg-orange-500/5 border border-orange-500/20 text-orange-500 text-[10px] font-bold italic">No hay áreas configuradas en esta sede</div>}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="pt-4 flex flex-col gap-3">
+                                                        {/* Surcharges toggle */}
+                                                        <div className="flex items-center justify-between p-4 rounded-2xl bg-[var(--bg-body)] border border-[var(--glass-border)] shadow-sm">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className={`p-2.5 rounded-xl transition-all duration-500 ${!shift.excludeSurcharges ? 'bg-green-500/10 text-green-500 shadow-[0_0_15px_rgba(34,197,94,0.2)]' : 'bg-red-500/10 text-red-500'}`}>
+                                                                    <Shield size={18} fill={!shift.excludeSurcharges ? "currentColor" : "none"} />
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[11px] font-black text-[var(--text-primary)] uppercase tracking-wide">Recargos y Suplementos</p>
+                                                                    <p className="text-[10px] text-[var(--text-tertiary)] font-bold mt-0.5">{!shift.excludeSurcharges ? 'Cálculo automático habilitado' : 'Excluido de cálculo de extras'}</p>
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => update({ ...shift, excludeSurcharges: !shift.excludeSurcharges })}
+                                                                className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all duration-300 shadow-md ${!shift.excludeSurcharges ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-red-500 text-white hover:bg-red-600'}`}
+                                                            >
+                                                                {!shift.excludeSurcharges ? 'Activos' : 'Desactivar'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            )}
                                         </div>
-                                    )}
+                                    </div>
                                 </div>
-                            );
+                                , document.body);
                         })()}
                     </div>
 
@@ -1012,7 +1023,7 @@ const WorkerProfile = ({ worker: initialWorker, onBack, setWorkers, shifts, setS
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 };
 

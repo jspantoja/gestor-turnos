@@ -64,6 +64,12 @@ const calculateShiftDuration = (startStr, endStr) => {
 export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, settings, options = {}) => {
     const cfg = settings.payrollConfig || {};
     const hourlyRate = cfg.hourlyRate || 6000;
+
+    // Colombian law: Calculate reduction factor based on gradual 48h -> 42h transition
+    const BASE_WEEKLY_HOURS = 48;
+    const weeklyHoursTarget = cfg.weeklyHoursTarget || 48;
+    const reductionFactor = weeklyHoursTarget / BASE_WEEKLY_HOURS;
+
     const hoursPerWeekday = cfg.hoursPerWeekday || { monday: 7, tuesday: 7.5, wednesday: 7.5, thursday: 7.5, friday: 7.5, saturday: 7, sunday: 7.33 };
 
     const getHoursForDate = (date) => {
@@ -158,13 +164,13 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
     // Cost Calculations
     const baseSalary = Math.round(realHours * hourlyRate);
 
-    // Surcharges
-    const avgSundayHours = hoursPerWeekday.sunday;
+    // Surcharges - Apply Colombian work hour reduction factor
+    const avgSundayHours = hoursPerWeekday.sunday * reductionFactor;
     const sundayCost = Math.round(sundaysCount * avgSundayHours * hourlyRate * ((cfg.sundaySurcharge || 75) / 100));
 
-    // Holiday
-    const avgDailyHours = 7.5; // From original logic
-    const holidayCost = Math.round(holidaysCount * avgDailyHours * hourlyRate * ((cfg.holidaySurcharge || 75) / 100));
+    // Holiday - Apply same reduction factor
+    const avgHolidayHours = (hoursPerWeekday.holiday || 7.5) * reductionFactor;
+    const holidayCost = Math.round(holidaysCount * avgHolidayHours * hourlyRate * ((cfg.holidaySurcharge || 75) / 100));
 
     const nightCost = Math.round(totalNightHours * hourlyRate * ((cfg.nightSurcharge || 35) / 100));
     const totalSurcharges = sundayCost + holidayCost + nightCost;
