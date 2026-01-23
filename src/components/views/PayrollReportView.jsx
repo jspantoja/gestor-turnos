@@ -411,7 +411,6 @@ const PayrollQuickActions = ({ workers, shifts, daysToShow, settings, currentDat
                     <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 group-hover:bg-orange-500 group-hover:text-white transition-colors"><Upload size={18} /></div>
                     <div><div className="text-sm font-bold text-[var(--text-primary)]">Restaurar / Importar</div><div className="text-[10px] text-[var(--text-secondary)]">Cargar archivo CSV</div></div>
                 </label>
-                ```
             </div>
         </div>
     );
@@ -573,6 +572,13 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
     const endDayNum = isFirstQ ? 15 : new Date(yearNum, currentDate.getMonth() + 1, 0).getDate();
 
     const handleExportPDF = () => {
+        // Calculate hours config for PDF totals
+        const hoursCfg = settings.payrollConfig?.hoursPerWeekday || {};
+        const weeklyHoursTarget = settings.payrollConfig?.weeklyHoursTarget || 48;
+        const reductionFactor = weeklyHoursTarget / 48;
+        const sunHours = (hoursCfg.sunday || 7.33) * reductionFactor;
+        const holHours = (hoursCfg.holiday || 7.33) * reductionFactor;
+
         const doc = new jsPDF('l', 'mm', 'a4');
         const pageWidth = doc.internal.pageSize.width;
 
