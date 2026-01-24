@@ -12,6 +12,11 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings, onEdit })
     const working = [], resting = [], absent = [];
 
     // Clasificación segura
+    // Build list of absence types including custom statuses
+    const defaultAbsentTypes = ['sick', 'vacation', 'permit'];
+    const customAbsentIds = (settings?.customStatuses || []).map(s => s.id);
+    const absentTypes = [...defaultAbsentTypes, ...customAbsentIds];
+
     workers.forEach(w => {
         const s = getShift(shifts, w.id, dateStr);
         // Protección: Si s no existe, creamos un objeto dummy
@@ -19,7 +24,7 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings, onEdit })
 
         if (safeShift.type === 'off') {
             resting.push({ ...w, shift: safeShift });
-        } else if (['sick', 'vacation', 'permit'].includes(safeShift.type)) {
+        } else if (absentTypes.includes(safeShift.type)) {
             absent.push({ ...w, shift: safeShift });
         } else {
             working.push({ ...w, shift: safeShift });
@@ -157,7 +162,19 @@ const DayDetailModal = ({ dateStr, onClose, workers, shifts, settings, onEdit })
                             <h3 className="text-xs font-bold uppercase text-[var(--warning-text)] mb-3 flex items-center gap-2 bg-[var(--warning-soft)] w-fit px-2 py-1 rounded-lg"><AlertCircle size={12} /> Ausencias ({absent.length})</h3>
                             <div className="space-y-2">
                                 {absent.map(w => {
-                                    const typeConfig = SHIFT_TYPES[w.shift.type] || SHIFT_TYPES.sick || { label: 'Ausente', style: 'bg-red-500 text-white' };
+                                    // Look up type config: first in SHIFT_TYPES, then in customStatuses
+                                    let typeConfig = SHIFT_TYPES[w.shift.type];
+                                    if (!typeConfig) {
+                                        const customStatus = settings?.customStatuses?.find(s => s.id === w.shift.type);
+                                        if (customStatus) {
+                                            typeConfig = {
+                                                label: customStatus.name,
+                                                style: `bg-[${customStatus.color}]/20 text-[${customStatus.color}]`
+                                            };
+                                        } else {
+                                            typeConfig = SHIFT_TYPES.sick || { label: 'Ausente', style: 'bg-red-500 text-white' };
+                                        }
+                                    }
                                     return (
                                         <div key={w.id} onClick={() => handleRowClick(w.id)} className="glass-panel p-2 rounded-xl flex items-center justify-between border border-[var(--warning-soft)] cursor-pointer hover:bg-[var(--glass-border)] transition-colors">
                                             <div className="flex items-center gap-2">

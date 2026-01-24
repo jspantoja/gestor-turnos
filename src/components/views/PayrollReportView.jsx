@@ -445,15 +445,19 @@ const PayrollRow = ({ worker, daysToShow, shifts, holidays, setSelectedCell, sta
             {daysToShow.map(d => {
                 const dateStr = toLocalISOString(d.date);
                 const s = getShift(shifts, worker.id, dateStr);
-                const type = SHIFT_TYPES[s.type || 'off'];
+                // Safe lookup: fallback to 'off' if type is not in SHIFT_TYPES (e.g., custom status ID)
+                const type = SHIFT_TYPES[s.type] || SHIFT_TYPES['off'];
                 const isSun = d.date.getDay() === 0;
                 const isHol = holidays.has(dateStr);
+
+                // Check if it's a custom absence status
+                const customStatusDef = settings.customStatuses?.find(st => st.id === s.type);
 
                 // Determine the display code: use custom shift code if available
                 const customShiftDef = s.type === 'custom' && settings.customShifts
                     ? settings.customShifts.find(cs => cs.id === s.customShiftId || cs.code === s.code)
                     : null;
-                const displayCode = customShiftDef?.payrollCode || (s.type === 'custom' && s.code ? s.code : type.code);
+                const displayCode = customStatusDef?.code || customShiftDef?.payrollCode || (s.type === 'custom' && s.code ? s.code : type.code);
 
                 // Get custom shift color if available (Priority to Settings Definition)
                 let customColor = null;
@@ -571,6 +575,112 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
     const startDayNum = isFirstQ ? 1 : 16;
     const endDayNum = isFirstQ ? 15 : new Date(yearNum, currentDate.getMonth() + 1, 0).getDate();
 
+    // Calculate which shift codes are used in this period
+    const usedShiftCodes = useMemo(() => {
+        const codeMap = new Map();
+
+        // Standard shift type definitions
+        const standardTypes = {
+            morning: { code: 'M', name: 'Mañana', color: '#3B82F6' },
+            afternoon: { code: 'T', name: 'Tarde', color: '#F97316' },
+            night: { code: 'N', name: 'Noche', color: '#4F46E5' },
+            off: { code: 'D', name: 'Descanso', color: '#64748b' },
+            sick: { code: 'I', name: 'Incapacidad', color: '#f43f5e' },
+            permit: { code: 'P', name: 'Permiso', color: '#8b5cf6' },
+            vacation: { code: 'V', name: 'Vacaciones', color: '#0ea5e9' }
+        };
+
+        // Helper to check if a code is standard
+        const getStandardDef = (c) => {
+            const found = Object.values(standardTypes).find(t => t.code === c);
+            return found;
+        };
+
+        activeWorkers.forEach(w => {
+            daysToShow.forEach(d => {
+                const dateStr = toLocalISOString(d.date);
+                const s = getShift(shifts, w.id, dateStr);
+                if (!s.type || s.type === 'unassigned') return;
+
+                let code = null;
+                let def = null;
+
+                // Check standard types
+                if (standardTypes[s.type]) {
+                    def = standardTypes[s.type];
+                    code = def.code;
+                }
+                // Check custom shifts
+                else if (s.type === 'custom' && s.customShiftId) {
+                    const customDef = (settings.customShifts || []).find(cs => cs.id === s.customShiftId || cs.code === s.code);
+                    if (customDef) {
+                        code = customDef.payrollCode || customDef.code;
+
+                        // Check if this resolved code maps to a standard one
+                        const std = getStandardDef(code);
+                        if (std) {
+                            def = std; // Use standard definition (Name & Color)
+                        } else {
+                            def = {
+                                code: code,
+                                name: customDef.name,
+                                color: customDef.colorHex || '#10B981'
+                            };
+                        }
+                    }
+                }
+                // Check custom statuses (absence types)
+                else {
+                    const customStatus = (settings.customStatuses || []).find(cs => cs.id === s.type);
+                    if (customStatus) {
+                        code = customStatus.payrollCode || customStatus.code;
+
+                        // Check if this resolved code maps to a standard one
+                        const std = getStandardDef(code);
+                        if (std) {
+                            def = std; // Use standard definition (Name & Color)
+                        } else {
+                            def = {
+                                code: code,
+                                name: customStatus.name,
+                                color: customStatus.color || '#8b5cf6'
+                            };
+                        }
+                    }
+                }
+
+                if (code && def) {
+                    // Normalize key to uppercase to prevent duplicates like 'm' vs 'M'
+                    const key = String(code).toUpperCase();
+
+                    // Prioritize standard types or keep first custom definition found
+                    // Logic: If map doesn't have it, set it.
+                    // If map has it, ONLY overwrite if the new one IS standard and the old one wasn't.
+                    // This ensures "Mañana" (Standard) overwrites "Turno M" (Custom), but "Turno A" (Custom) stays unless a Standard "A" appears.
+                    if (!codeMap.has(key)) {
+                        codeMap.set(key, { ...def, isStandard: !!standardTypes[s.type] });
+                    } else if (standardTypes[s.type] && !codeMap.get(key).isStandard) {
+                        codeMap.set(key, { ...def, isStandard: true });
+                    }
+                }
+            });
+        });
+
+        // Sort by code alphabetically but put standard ones first
+        const standardOrder = ['M', 'T', 'N', 'D', 'I', 'P', 'V'];
+        return Array.from(codeMap.values()).sort((a, b) => {
+            const codeA = String(a.code).toUpperCase();
+            const codeB = String(b.code).toUpperCase();
+            const aIdx = standardOrder.indexOf(codeA);
+            const bIdx = standardOrder.indexOf(codeB);
+
+            if (aIdx >= 0 && bIdx >= 0) return aIdx - bIdx;
+            if (aIdx >= 0) return -1;
+            if (bIdx >= 0) return 1;
+            return codeA.localeCompare(codeB);
+        });
+    }, [activeWorkers, shifts, daysToShow, settings]);
+
     const handleExportPDF = () => {
         // Calculate hours config for PDF totals
         const hoursCfg = settings.payrollConfig?.hoursPerWeekday || {};
@@ -630,13 +740,17 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
                 daysToShow.forEach(d => {
                     const dateStr = toLocalISOString(d.date);
                     const s = getShift(shifts, w.id, dateStr);
-                    const type = SHIFT_TYPES[s.type || 'off'];
+                    // Safe lookup: fallback to 'off' if type is not in SHIFT_TYPES (e.g., custom status ID)
+                    const type = SHIFT_TYPES[s.type] || SHIFT_TYPES['off'];
+
+                    // Check if it's a custom absence status
+                    const customStatusDef = settings.customStatuses?.find(st => st.id === s.type);
 
                     // Resolve Code
                     const customShiftDef = s.type === 'custom' && settings.customShifts
                         ? settings.customShifts.find(cs => cs.id === s.customShiftId || cs.code === s.code)
                         : null;
-                    const displayCode = customShiftDef?.payrollCode || (s.type === 'custom' && s.code ? s.code : type.code);
+                    const displayCode = customStatusDef?.code || customShiftDef?.payrollCode || (s.type === 'custom' && s.code ? s.code : type.code);
 
                     rowData.push(displayCode);
                 });
@@ -700,6 +814,71 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
                 }
             }
         });
+
+        // --- 5. ADD LEGEND TO PDF ---
+        // Safely get Y position, fallback to finalY + 20 if autoTable info is missing
+        let legendY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 10 : finalY + 20;
+
+        if (usedShiftCodes && usedShiftCodes.length > 0) {
+            try {
+                // Check if we need a new page
+                if (legendY > doc.internal.pageSize.height - 30) {
+                    doc.addPage();
+                    legendY = 20;
+                }
+
+                doc.setFontSize(8);
+                doc.setTextColor(100, 116, 139);
+                doc.setFont('helvetica', 'bold');
+                doc.text('CONVENCIONES:', 14, legendY);
+
+                legendY += 5;
+                let startX = 14;
+                const itemWidth = 35; // approximate width per item
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(7);
+
+                usedShiftCodes.forEach((item) => {
+                    // Check if we need to wrap to next line
+                    if (startX + itemWidth > pageWidth - 14) {
+                        startX = 14;
+                        legendY += 6;
+                    }
+
+                    // Draw color box (simulating the UI look)
+                    // PDF doesn't support alpha easily for old jspdf versions, so we use solid rects or thin borders
+                    // Let's use a small colored rect
+
+                    // Hex to RGB helper
+                    const hexToRgb = (hex) => {
+                        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                        return result ? [
+                            parseInt(result[1], 16),
+                            parseInt(result[2], 16),
+                            parseInt(result[3], 16)
+                        ] : [0, 0, 0];
+                    };
+
+                    const [r, g, b] = hexToRgb(item.color || '#000000');
+
+                    doc.setFillColor(r, g, b);
+                    doc.roundedRect(startX, legendY - 2.5, 6, 4, 1, 1, 'F');
+
+                    doc.setTextColor(255, 255, 255);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(item.code, startX + 3, legendY, { align: 'center', baseline: 'middle' });
+
+                    doc.setTextColor(71, 85, 105);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(item.name, startX + 8, legendY);
+
+                    startX += itemWidth;
+                });
+            } catch (e) {
+                console.error("Error generating PDF legend:", e);
+            }
+        }
 
         doc.save(`Nomina_${monthName}_${yearNum}.pdf`);
     };
@@ -791,6 +970,30 @@ const PayrollReportView = ({ workers, setWorkers, shifts, setShifts, currentDate
                             <p className="text-sm font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
                                 {settings.payrollConfig.customMessage}
                             </p>
+                        </div>
+                    )}
+
+                    {/* --- DYNAMIC LEGEND (Print & PDF Visible) --- */}
+                    {usedShiftCodes.length > 0 && (
+                        <div className="mt-4 p-4 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-dock)] print-visible">
+                            <h4 className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2 border-b border-[var(--glass-border)] pb-1">
+                                Convenciones de Turnos
+                            </h4>
+                            <div className="flex flex-wrap gap-4 justify-center sm:justify-start">
+                                {usedShiftCodes.map((item) => (
+                                    <div key={item.code} className="flex items-center gap-2">
+                                        <div
+                                            className="font-bold text-xs px-1.5 py-0.5 rounded shadow-sm border border-black/5"
+                                            style={{ backgroundColor: `${item.color}20`, color: item.color, borderColor: `${item.color}40` }}
+                                        >
+                                            {item.code}
+                                        </div>
+                                        <span className="text-[10px] font-medium text-[var(--text-secondary)]">
+                                            {item.name}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </div>

@@ -18,7 +18,10 @@ const DashboardView = ({ workers, shifts, currentDate, settings }) => {
         let absentToday = 0; // Sick, vacation, etc.
 
         const workingTypes = ['morning', 'afternoon', 'night', 'custom'];
-        const absentTypes = ['sick', 'vacation', 'permit', 'license'];
+        // Include default absence types plus any custom statuses from settings
+        const defaultAbsentTypes = ['sick', 'vacation', 'permit', 'license'];
+        const customAbsentIds = (settings.customStatuses || []).map(s => s.id);
+        const absentTypes = [...defaultAbsentTypes, ...customAbsentIds];
 
         activeWorkers.forEach(w => {
             const shift = getShift(shifts, w.id, todayStr);

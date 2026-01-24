@@ -1,4 +1,5 @@
 import { toLocalISOString, getShift } from './helpers';
+import { isAbsenceType } from './absenceUtils';
 
 // Helper to calculate overlap between two time ranges
 // All times are in minutes from 00:00
@@ -93,7 +94,8 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
         const dateStr = toLocalISOString(d.date);
         const s = getShift(shifts, worker.id, dateStr);
         const isOff = s.type === 'off' || !s.type;
-        const isAbsence = ['sick', 'vacation', 'permit'].includes(s.type);
+        const customStatuses = settings.customStatuses || [];
+        const isAbsence = isAbsenceType(s.type, customStatuses) && s.type !== 'off';
         const isSunday = d.date.getDay() === 0;
         const isHoliday = holidays.has(dateStr);
         const hours = getHoursForDate(d.date);
@@ -154,7 +156,7 @@ export const calculateWorkerPay = (worker, shifts, daysToShow, holidays, setting
         }
 
         // Transport: Count days worked (excluding absences)
-        if (s.type && s.type !== 'off' && !['sick', 'vacation', 'permit'].includes(s.type)) {
+        if (s.type && !isAbsenceType(s.type, customStatuses)) {
             wDaysForTransport++;
         }
     });
